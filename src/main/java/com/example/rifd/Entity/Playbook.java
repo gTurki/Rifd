@@ -6,7 +6,9 @@ import lombok.*;
 
 @Entity
 @Table(name = "playbooks")
-@Getter @Setter @NoArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
 public class Playbook extends BaseEntity {
 
     @Column(nullable = false)

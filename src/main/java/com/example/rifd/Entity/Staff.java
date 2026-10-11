@@ -8,7 +8,9 @@ import java.time.LocalTime;
 
 @Entity
 @Table(name = "staff")
-@Getter @Setter @NoArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
 public class Staff extends BaseEntity {
 
     @Column(unique = true, nullable = false)

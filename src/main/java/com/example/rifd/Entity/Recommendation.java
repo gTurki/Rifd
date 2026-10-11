@@ -7,7 +7,9 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "recommendations")
-@Getter @Setter @NoArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
 public class Recommendation extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

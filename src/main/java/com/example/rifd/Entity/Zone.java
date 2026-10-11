@@ -6,7 +6,9 @@ import lombok.*;
 
 @Entity
 @Table(name = "zones")
-@Getter @Setter @NoArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
 public class Zone extends BaseEntity {
 
     @Column(unique = true, nullable = false)

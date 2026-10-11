@@ -9,7 +9,9 @@ import java.util.List;
 
 @Entity
 @Table(name = "accessible_routes")
-@Getter @Setter @NoArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
 public class AccessibleRoute extends BaseEntity {
 
     @Column(nullable = false)

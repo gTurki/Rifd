@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -23,4 +24,7 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
     List<Incident> search(@Param("status") IncidentStatus status,
                           @Param("severity") Severity severity,
                           @Param("category") IncidentCategory category);
+
+    // merge candidates: same category, still open
+    List<Incident> findByCategoryAndStatusNotIn(IncidentCategory category, Collection<IncidentStatus> statuses);
 }

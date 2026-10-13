@@ -9,5 +9,6 @@ public enum ActionType {
     ACCEPTED,
     REJECTED,
     ESCALATED,
-    RESOLVED
+    RESOLVED,
+    ACKNOWLEDGED
 }

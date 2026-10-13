@@ -11,6 +11,8 @@ import com.example.rifd.Entity.BaseEntity;
 import com.example.rifd.Entity.Event;
 import com.example.rifd.Entity.Incident;
 import com.example.rifd.Entity.Zone;
+import com.example.rifd.DTOOut.IncidentDetailsDTOOut;
+import java.util.List;
 
 public final class DTOMapper {
 
@@ -44,6 +46,11 @@ public final class DTOMapper {
                 incident.getAlertCount(), incident.getAffectsAccessibility(), idOf(incident.getAccessibilityAsset()),
                 incident.getAcknowledgedAt(), incident.getResolvedAt(), incident.getResolutionNotes(),
                 incident.getActualSeverity(), incident.getCreatedAt(), incident.getUpdatedAt());
+    }
+
+    public static IncidentDetailsDTOOut toDTO(Incident incident, List<Alert> alerts) {
+        return new IncidentDetailsDTOOut(toDTO(incident),
+                alerts.stream().map(DTOMapper::toDTO).toList());
     }
 
     public static ActivityLogDTOOut toDTO(ActivityLog log) {

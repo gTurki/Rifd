@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 
 @RestController
-@RequestMapping("/api/activity")
+@RequestMapping("/api/v1/activity")
 @RequiredArgsConstructor
 public class ActivityLogController {
 

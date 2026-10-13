@@ -12,10 +12,11 @@ import java.util.List;
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
-    // this query retrieves notifications for a specific staff member or specialty, with an option to filter for unread notifications only
+    // notifications for a specific staff member OR their specialty (LEFT JOIN keeps specialty-only notifications)
     @Query("""
            SELECT n FROM Notification n
-           WHERE (n.recipientStaff.id = :staffId OR n.recipientSpecialty = :specialty)
+           LEFT JOIN n.recipientStaff s
+           WHERE (s.id = :staffId OR n.recipientSpecialty = :specialty)
              AND (:unreadOnly = false OR n.readAt IS NULL)
            ORDER BY n.sentAt DESC
            """)

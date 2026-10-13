@@ -1,10 +1,10 @@
-package com.example.rifd.DTO;
+package com.example.rifd.DTOOut;
 
 import com.example.rifd.Enum.ZoneType;
 
 import java.time.LocalDateTime;
 
-public record ZoneResponse(
+public record ZoneDTOOut(
         Long id,
         String code,
         String name,

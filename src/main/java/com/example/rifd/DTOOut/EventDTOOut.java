@@ -1,10 +1,10 @@
-package com.example.rifd.DTO;
+package com.example.rifd.DTOOut;
 
 import com.example.rifd.Enum.EventType;
 
 import java.time.LocalDateTime;
 
-public record EventResponse(
+public record EventDTOOut(
         Long id,
         String name,
         EventType type,

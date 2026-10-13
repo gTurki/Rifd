@@ -1,4 +1,4 @@
-package com.example.rifd.DTO;
+package com.example.rifd.DTOOut;
 
 import com.example.rifd.Enum.AlertSource;
 import com.example.rifd.Enum.AlertStatus;
@@ -7,7 +7,7 @@ import com.example.rifd.Enum.Severity;
 
 import java.time.LocalDateTime;
 
-public record AlertResponse(
+public record AlertDTOOut(
         Long id,
         AlertSource source,
         String sourceReference,

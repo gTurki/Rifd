@@ -1,4 +1,4 @@
-package com.example.rifd.DTO;
+package com.example.rifd.DTOOut;
 
 import com.example.rifd.Enum.IncidentCategory;
 import com.example.rifd.Enum.IncidentStatus;
@@ -6,7 +6,7 @@ import com.example.rifd.Enum.Severity;
 
 import java.time.LocalDateTime;
 
-public record IncidentResponse(
+public record IncidentDTOOut(
         Long id,
         String code,
         String title,

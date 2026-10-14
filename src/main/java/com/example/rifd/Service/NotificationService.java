@@ -76,7 +76,16 @@ public class NotificationService {
     public NotificationDTOOut markRead(Long notificationId) {
         Notification n = notificationRepository.findById(notificationId)
                 .orElseThrow(() -> new ApiException("Notification not found"));
-        if (n.getRecipientStaff() != null) currentUser.requireSelfIfField(n.getRecipientStaff().getId());
+        if (n.getRecipientStaff() != null) {
+            currentUser.requireSelfIfField(n.getRecipientStaff().getId());
+        } else if (n.getRecipientSpecialty() != null && currentUser.isField()) {
+            // a field user may only mark their own team's notifications as read
+            StaffSpecialty mine = currentUser.staffId().flatMap(staffRepository::findById)
+                    .map(Staff::getSpecialty).orElse(null);
+            if (mine != n.getRecipientSpecialty()) {
+                throw new ApiException("You can only act on your own team's notifications");
+            }
+        }
         if (n.getReadAt() == null) { // idempotent
             n.setReadAt(LocalDateTime.now());
             notificationRepository.save(n);

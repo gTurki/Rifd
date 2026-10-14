@@ -1,5 +1,6 @@
 package com.example.rifd.Controller;
 
+import com.example.rifd.DTOIn.RejectDTOIn;
 import com.example.rifd.DTOIn.ResolveDTOIn;
 import com.example.rifd.DTOIn.SeverityUpdateDTOIn;
 import com.example.rifd.DTOIn.StatusUpdateDTOIn;
@@ -80,6 +81,12 @@ public class IncidentController {
         return ResponseEntity.ok(dto == null
                 ? incidentService.markFalseAlarm(id, null, currentUser.actorId(null))
                 : incidentService.markFalseAlarm(id, dto.resolutionNotes(), currentUser.actorId(dto.actorStaffId())));
+    }
+
+    // body: { "reason": "...", "actorStaffId": 1 } — reason is required
+    @PostMapping("/{id}/reopen")
+    public ResponseEntity<?> reopen(@PathVariable Long id, @RequestBody @Valid RejectDTOIn dto) {
+        return ResponseEntity.ok(incidentService.reopen(id, dto.reason(), currentUser.actorId(dto.actorStaffId())));
     }
 
     @GetMapping("/{id}/activity")

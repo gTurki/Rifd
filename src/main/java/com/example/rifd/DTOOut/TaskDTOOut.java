@@ -1,5 +1,6 @@
 package com.example.rifd.DTOOut;
 
+import com.example.rifd.Enum.Severity;
 import com.example.rifd.Enum.StaffLevel;
 import com.example.rifd.Enum.StaffSpecialty;
 import com.example.rifd.Enum.TaskStatus;
@@ -10,6 +11,11 @@ public record TaskDTOOut(
         Long id,
         Long incidentId,
         String incidentCode,
+        String incidentTitle,
+        Severity incidentSeverity,
+        Double incidentX,
+        Double incidentY,
+        String zoneName,
         Long staffId,
         String staffName,
         StaffSpecialty staffSpecialty,

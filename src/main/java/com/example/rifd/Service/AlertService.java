@@ -136,6 +136,9 @@ public class AlertService {
         Alert alert = alertRepository.findById(alertId)
                 .orElseThrow(() -> new ApiException("Alert not found"));
 
+        // the operator dismissed it while it was being classified: keep it out
+        if (alert.getStatus() == AlertStatus.DISMISSED) return DTOMapper.toDTO(alert);
+
         alert.setAiCategory(c.category());
         alert.setAiSeverity(c.severity());
         alert.setAiConfidence(c.confidence());
@@ -204,12 +207,15 @@ public class AlertService {
         pipelineLock.lock();
         try {
             return transactionTemplate.execute(s -> {
-                incidentService.validateActor(actorId);
+                incidentService.validateOperator(actorId);
                 Alert alert = alertRepository.findById(alertId).orElseThrow(() -> new ApiException("Alert not found"));
                 if (alert.getStatus() == AlertStatus.DISMISSED) return DTOMapper.toDTO(alert);
 
                 AlertStatus old = alert.getStatus();
                 Incident incident = alert.getIncident();
+                if (incident != null && IncidentService.isClosed(incident.getStatus())) {
+                    throw new ApiException("Incident is already closed");
+                }
                 alert.setStatus(AlertStatus.DISMISSED);
                 alert.setIncident(null);
                 alertRepository.save(alert);

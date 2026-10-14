@@ -132,8 +132,9 @@ public class AssignmentService {
 
     @Transactional
     public TaskDTOOut assignManual(Long incidentId, Long staffId, String notes, Long operatorId) {
-        incidentService.validateActor(operatorId);
+        incidentService.validateOperator(operatorId);
         Incident incident = incidentService.getOpenIncident(incidentId);
+        incidentService.autoAcknowledge(incident, operatorId);
         Staff staff = staffService.getStaff(staffId);
 
         if (staff.getRole() != StaffRole.FIELD) throw new ApiException("Only field staff can receive tasks");
@@ -180,8 +181,7 @@ public class AssignmentService {
         StaffLevel level = previous.getLevel() == StaffLevel.ASSISTANT ? StaffLevel.ASSISTANT
                 : rec != null && rec.getRequiredLevel() != null ? rec.getRequiredLevel() : StaffLevel.CERTIFIED;
 
-        Set<Long> excluded = taskRepository.findByIncidentId(incident.getId()).stream()
-                .map(t -> t.getStaff().getId()).collect(Collectors.toCollection(HashSet::new));
+        Set<Long> excluded = staffOnIncident(incident.getId());
 
         for (Pick pick : rank(incident, specialty, level, excluded, false)) {
             if (!staffService.tryClaim(pick.staff())) continue;
@@ -275,8 +275,11 @@ public class AssignmentService {
                 .orElse(null);
     }
 
+    // excluded = still working on it, or refused it (REJECTED, incl. not accepted in time).
+    // CANCELLED (pulled off by the operator) and DONE are eligible again.
     private Set<Long> staffOnIncident(Long incidentId) {
         return taskRepository.findByIncidentId(incidentId).stream()
+                .filter(t -> StaffService.ACTIVE_TASK.contains(t.getStatus()) || t.getStatus() == TaskStatus.REJECTED)
                 .map(t -> t.getStaff().getId())
                 .collect(Collectors.toCollection(HashSet::new));
     }

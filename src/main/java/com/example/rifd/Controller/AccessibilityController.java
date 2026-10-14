@@ -3,6 +3,7 @@ package com.example.rifd.Controller;
 import com.example.rifd.DTOIn.AssetStatusDTOIn;
 import com.example.rifd.Security.CurrentUser;
 import com.example.rifd.Service.AccessibilityService;
+import com.example.rifd.Service.IncidentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,7 @@ public class AccessibilityController {
 
     private final AccessibilityService accessibilityService;
     private final CurrentUser currentUser;
+    private final IncidentService incidentService;
 
     @GetMapping("/assets")
     public ResponseEntity<?> assets() {
@@ -23,8 +25,9 @@ public class AccessibilityController {
 
     @PatchMapping("/assets/{id}/status")
     public ResponseEntity<?> updateAssetStatus(@PathVariable Long id, @RequestBody @Valid AssetStatusDTOIn dto) {
-        return ResponseEntity.ok(accessibilityService.updateAssetStatus(id, dto.status(),
-                currentUser.actorId(dto.actorStaffId())));
+        Long actor = currentUser.actorId(dto.actorStaffId());
+        incidentService.validateOperator(actor);
+        return ResponseEntity.ok(accessibilityService.updateAssetStatus(id, dto.status(), actor));
     }
 
     @GetMapping("/routes")

@@ -15,6 +15,7 @@ import com.example.rifd.Enum.Severity;
 import com.example.rifd.Enum.StaffLevel;
 import com.example.rifd.Enum.StaffSpecialty;
 import com.example.rifd.Events.IncidentCreatedEvent;
+import com.example.rifd.Events.IncidentReopenedEvent;
 import com.example.rifd.Events.IncidentResolvedEvent;
 import com.example.rifd.Events.IncidentSeverityChangedEvent;
 import com.example.rifd.Mapper.DTOMapper;
@@ -108,9 +109,18 @@ public class RecommendationService {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onIncidentResolved(IncidentResolvedEvent event) {
         safely(event.incidentId(), () -> withLock(event.incidentId(), () -> tx.execute(s -> {
+            // reopened before this listener ran: keep the new plan
+            if (!IncidentService.isClosed(incidentService.getIncident(event.incidentId()).getStatus())) return null;
             supersedePending(event.incidentId(), "Incident closed as " + event.finalStatus());
             return null;
         })));
+    }
+
+    // reopened -> fresh plan that counts whoever is still on it
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onIncidentReopened(IncidentReopenedEvent event) {
+        safely(event.incidentId(), () -> regenerate(event.incidentId(), false));
     }
 
     // ---------------- API ----------------
@@ -126,9 +136,10 @@ public class RecommendationService {
     public RecommendationDTOOut accept(Long recommendationId, Long actorId) {
         Long incidentId = incidentIdOf(recommendationId);
         return withLock(incidentId, () -> tx.execute(s -> {
-            incidentService.validateActor(actorId);
+            incidentService.validateOperator(actorId);
             Recommendation rec = getPending(recommendationId);
-            incidentService.getOpenIncident(incidentId); // 400 if closed
+            Incident incident = incidentService.getOpenIncident(incidentId); // 400 if closed
+            incidentService.autoAcknowledge(incident, actorId);
 
             rec.setStatus(RecommendationStatus.ACCEPTED);
             rec.setDecidedBy(actorId == null ? null : staffRepository.getReferenceById(actorId));
@@ -151,8 +162,9 @@ public class RecommendationService {
     public RecommendationDTOOut reject(Long recommendationId, String reason, Long actorId) {
         Long incidentId = incidentIdOf(recommendationId);
         return withLock(incidentId, () -> tx.execute(s -> {
-            incidentService.validateActor(actorId);
+            incidentService.validateOperator(actorId);
             Recommendation rec = getPending(recommendationId);
+            incidentService.autoAcknowledge(incidentService.getOpenIncident(incidentId), actorId);
 
             rec.setStatus(RecommendationStatus.REJECTED);
             rec.setRejectionReason(reason.trim());

@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import com.example.rifd.Enum.EntityType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import java.util.Optional;
 
 import java.util.List;
 
@@ -24,4 +25,8 @@ public interface ActivityLogRepository extends JpaRepository<ActivityLog, Long> 
 
     // stats: aiDecisions / fallbackDecisions = (ALERT, CREATED, AI|SYSTEM)
     long countByEntityTypeAndActionAndActorType(EntityType entityType, ActionType action, ActorType actorType);
+
+    // latest status change of an asset (who took it out of service: a human or the system)
+    Optional<ActivityLog> findFirstByEntityTypeAndEntityIdAndActionOrderByIdDesc(EntityType entityType, Long entityId,
+                                                                                 ActionType action);
 }

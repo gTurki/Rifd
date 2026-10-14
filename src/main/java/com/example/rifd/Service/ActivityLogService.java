@@ -70,4 +70,13 @@ public class ActivityLogService {
         return activityLogRepository.existsByIncidentIdAndActionAndActorType(
                 incidentId, ActionType.SEVERITY_CHANGED, ActorType.HUMAN);
     }
+
+    // a supervisor took the asset out by hand -> only a supervisor puts it back
+    @Transactional(readOnly = true)
+    public boolean lastAssetChangeByHuman(Long assetId) {
+        return activityLogRepository.findFirstByEntityTypeAndEntityIdAndActionOrderByIdDesc(
+                        EntityType.ASSET, assetId, ActionType.STATUS_CHANGED)
+                .map(l -> l.getActorType() == ActorType.HUMAN)
+                .orElse(false);
+    }
 }

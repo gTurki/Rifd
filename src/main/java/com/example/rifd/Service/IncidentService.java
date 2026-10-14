@@ -3,21 +3,9 @@ package com.example.rifd.Service;
 import com.example.rifd.Api.ApiException;
 import com.example.rifd.DTOOut.IncidentDTOOut;
 import com.example.rifd.DTOOut.IncidentDetailsDTOOut;
-import com.example.rifd.Entity.Alert;
-import com.example.rifd.Entity.Event;
-import com.example.rifd.Entity.Incident;
-import com.example.rifd.Entity.Zone;
-import com.example.rifd.Enum.ActionType;
-import com.example.rifd.Enum.ActorType;
-import com.example.rifd.Enum.AlertStatus;
-import com.example.rifd.Enum.EntityType;
-import com.example.rifd.Enum.IncidentCategory;
-import com.example.rifd.Enum.IncidentStatus;
-import com.example.rifd.Enum.Severity;
-import com.example.rifd.Events.IncidentAssetLinkedEvent;
-import com.example.rifd.Events.IncidentCreatedEvent;
-import com.example.rifd.Events.IncidentResolvedEvent;
-import com.example.rifd.Events.IncidentSeverityChangedEvent;
+import com.example.rifd.Entity.*;
+import com.example.rifd.Enum.*;
+import com.example.rifd.Events.*;
 import com.example.rifd.Mapper.DTOMapper;
 import com.example.rifd.Repository.AlertRepository;
 import com.example.rifd.Repository.IncidentRepository;
@@ -236,7 +224,7 @@ public class IncidentService {
 
     @Transactional
     public IncidentDTOOut acknowledge(Long incidentId, Long actorStaffId) {
-        validateActor(actorStaffId);
+        validateOperator(actorStaffId);
         Incident incident = getOpenIncident(incidentId);
 
         if (incident.getAcknowledgedAt() == null) { // idempotent
@@ -249,10 +237,21 @@ public class IncidentService {
         return DTOMapper.toDTO(incident);
     }
 
+    // the first operator action on an incident counts as acknowledging it (response-time metric)
+    public void autoAcknowledge(Incident incident, Long actorStaffId) {
+        if (incident.getAcknowledgedAt() != null) return;
+        incident.setAcknowledgedAt(LocalDateTime.now());
+        incidentRepository.save(incident);
+        activityLogService.log(EntityType.INCIDENT, incident.getId(), incident.getId(), ActionType.ACKNOWLEDGED,
+                ActorType.HUMAN, actorStaffId, null, null, "Acknowledged with the first operator action");
+        broadcastIncident(incident);
+    }
+
     @Transactional
     public IncidentDTOOut updateSeverity(Long incidentId, Severity newSeverity, String reason, Long actorStaffId) {
-        validateActor(actorStaffId);
+        validateOperator(actorStaffId);
         Incident incident = getOpenIncident(incidentId);
+        autoAcknowledge(incident, actorStaffId);
         Severity oldSeverity = incident.getSeverity();
 
         if (newSeverity == oldSeverity) return DTOMapper.toDTO(incident);
@@ -277,15 +276,21 @@ public class IncidentService {
         if (newStatus == IncidentStatus.RESOLVED) return resolve(incidentId, null, null, actorStaffId);
         if (newStatus == IncidentStatus.FALSE_ALARM) return markFalseAlarm(incidentId, null, actorStaffId);
 
-        validateActor(actorStaffId);
+        validateOperator(actorStaffId);
+        // ASSIGNED / IN_PROGRESS follow the tasks: without an active task the incident would be stuck
+        if ((newStatus == IncidentStatus.ASSIGNED || newStatus == IncidentStatus.IN_PROGRESS)
+                && taskRepository.countByIncidentIdAndStatusIn(incidentId, StaffService.ACTIVE_TASK) == 0) {
+            throw new ApiException("Status follows the tasks: assign staff first");
+        }
         changeStatus(incidentId, newStatus, ActorType.HUMAN, actorStaffId);
         return DTOMapper.toDTO(getIncident(incidentId));
     }
 
     @Transactional
     public IncidentDTOOut resolve(Long incidentId, String resolutionNotes, Severity actualSeverity, Long actorStaffId) {
-        validateActor(actorStaffId);
+        validateOperator(actorStaffId);
         Incident incident = getOpenIncident(incidentId);
+        autoAcknowledge(incident, actorStaffId);
 
         if (StringUtils.hasText(resolutionNotes)) incident.setResolutionNotes(resolutionNotes.trim());
         incident.setActualSeverity(actualSeverity != null ? actualSeverity : incident.getSeverity());
@@ -296,12 +301,45 @@ public class IncidentService {
 
     @Transactional
     public IncidentDTOOut markFalseAlarm(Long incidentId, String notes, Long actorStaffId) {
-        validateActor(actorStaffId);
+        validateOperator(actorStaffId);
         Incident incident = getOpenIncident(incidentId);
+        autoAcknowledge(incident, actorStaffId);
 
         if (StringUtils.hasText(notes)) incident.setResolutionNotes(notes.trim());
 
         changeStatus(incidentId, IncidentStatus.FALSE_ALARM, ActorType.HUMAN, actorStaffId);
+        return DTOMapper.toDTO(incident);
+    }
+
+    // a closed incident comes back (closed by mistake, or a false alarm that turned out real).
+    // Comes back: OPEN, the asset is taken out of service again, a fresh recommendation.
+    // Does NOT come back: the cancelled tasks (a new assignment is made from the new plan).
+    @Transactional
+    public IncidentDTOOut reopen(Long incidentId, String reason, Long actorStaffId) {
+        validateOperator(actorStaffId);
+        Incident incident = getIncidentForUpdate(incidentId);
+        IncidentStatus old = incident.getStatus();
+        if (!isClosed(old)) throw new ApiException("Incident is not closed");
+
+        String previousNotes = incident.getResolutionNotes();
+        incident.setStatus(IncidentStatus.OPEN);
+        incident.setResolvedAt(null);
+        incident.setActualSeverity(null);
+        incident.setResolutionNotes(null);
+        incidentRepository.save(incident);
+
+        activityLogService.log(EntityType.INCIDENT, incidentId, incidentId, ActionType.REOPENED, ActorType.HUMAN,
+                actorStaffId, old.name(), IncidentStatus.OPEN.name(),
+                "Reopened: " + reason.trim()
+                        + (StringUtils.hasText(previousNotes) ? " | previous notes: " + previousNotes : ""));
+
+        eventPublisher.publishEvent(new IncidentReopenedEvent(incidentId));
+        if (incident.getAccessibilityAsset() != null) {
+            // same listener as a new link: asset out of service again + routes + accessibility team
+            eventPublisher.publishEvent(new IncidentAssetLinkedEvent(incidentId, incident.getAccessibilityAsset().getId()));
+        }
+        broadcastIncident(incident);
+        dashboardService.broadcastStats();
         return DTOMapper.toDTO(incident);
     }
 
@@ -336,19 +374,34 @@ public class IncidentService {
         return newStatus;
     }
 
-    // a rejected / timed-out / cancelled task left nobody on it: ASSIGNED -> OPEN
-    // (IN_PROGRESS stays: somebody already started working on it)
+    // a rejected / timed-out task left nobody on it: ASSIGNED -> OPEN
     @Transactional
     public void reopenIfUnstaffed(Long incidentId) {
+        reopenIfUnstaffed(incidentId, false);
+    }
+
+    // includeInProgress = the operator pulled the last staff member off: IN_PROGRESS -> OPEN too,
+    // unless somebody already finished their part (then it waits to be resolved).
+    // returns true if the incident went back to OPEN
+    @Transactional
+    public boolean reopenIfUnstaffed(Long incidentId, boolean includeInProgress) {
         Incident incident = getIncidentForUpdate(incidentId);
-        if (incident.getStatus() != IncidentStatus.ASSIGNED) return;
-        if (taskRepository.countByIncidentIdAndStatusIn(incidentId, StaffService.ACTIVE_TASK) > 0) return;
+        IncidentStatus current = incident.getStatus();
+        boolean eligible = current == IncidentStatus.ASSIGNED
+                || (includeInProgress && current == IncidentStatus.IN_PROGRESS);
+        if (!eligible) return false;
+        if (taskRepository.countByIncidentIdAndStatusIn(incidentId, StaffService.ACTIVE_TASK) > 0) return false;
+        if (current == IncidentStatus.IN_PROGRESS
+                && taskRepository.countByIncidentIdAndStatusIn(incidentId, EnumSet.of(TaskStatus.DONE)) > 0) {
+            return false;
+        }
 
         incident.setStatus(IncidentStatus.OPEN);
         incidentRepository.save(incident);
         activityLogService.log(EntityType.INCIDENT, incidentId, incidentId, ActionType.STATUS_CHANGED, ActorType.SYSTEM,
-                null, IncidentStatus.ASSIGNED.name(), IncidentStatus.OPEN.name(), "No active task left on the incident");
+                null, current.name(), IncidentStatus.OPEN.name(), "No active task left on the incident");
         broadcastIncident(incident);
+        return true;
     }
 
     public void broadcastIncident(Incident incident) {
@@ -385,6 +438,17 @@ public class IncidentService {
     public void validateActor(Long actorStaffId) {
         if (actorStaffId != null && !staffRepository.existsById(actorStaffId)) {
             throw new ApiException("Staff not found");
+        }
+    }
+
+    // operator-only actions (close, severity, assign, accept a plan...): field staff are refused,
+    // even with security.enabled=false where the actor comes from the request
+    public void validateOperator(Long actorStaffId) {
+        if (actorStaffId == null) return;
+        Staff staff = staffRepository.findById(actorStaffId)
+                .orElseThrow(() -> new ApiException("Staff not found"));
+        if (staff.getRole() == StaffRole.FIELD) {
+            throw new ApiException("Only operators and supervisors can do this");
         }
     }
 

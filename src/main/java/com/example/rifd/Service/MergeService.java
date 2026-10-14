@@ -72,6 +72,8 @@ public class MergeService {
     private List<Candidate> findCandidates(Alert alert) {
         List<Candidate> result = new ArrayList<>();
         for (Incident incident : incidentRepository.findByCategoryAndStatusNotIn(alert.getAiCategory(), CLOSED)) {
+            // every alert was dismissed: nothing real left to merge into
+            if (Integer.valueOf(0).equals(incident.getAlertCount())) continue;
             Double distance = distance(alert, incident);
             if (distance == null || distance > maxDistance) continue;
 

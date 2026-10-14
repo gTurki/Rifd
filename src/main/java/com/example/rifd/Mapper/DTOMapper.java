@@ -102,8 +102,14 @@ public final class DTOMapper {
     // needs an open session (incident code / staff name are lazy)
     public static TaskDTOOut toDTO(Task t) {
         Staff staff = t.getStaff();
-        return new TaskDTOOut(t.getId(), idOf(t.getIncident()),
-                t.getIncident() == null ? null : t.getIncident().getCode(),
+        Incident i = t.getIncident();
+        return new TaskDTOOut(t.getId(), idOf(i),
+                i == null ? null : i.getCode(),
+                i == null ? null : i.getTitle(),
+                i == null ? null : i.getSeverity(),
+                i == null ? null : i.getX(),
+                i == null ? null : i.getY(),
+                i == null || i.getZone() == null ? null : i.getZone().getName(),
                 idOf(staff), staff == null ? null : staff.getName(),
                 staff == null ? null : staff.getSpecialty(), staff == null ? null : staff.getLevel(),
                 idOf(t.getRecommendation()), idOf(t.getAssignedBy()), t.getStatus(),

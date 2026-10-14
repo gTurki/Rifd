@@ -123,10 +123,14 @@ public class AccessibilityService {
             locked(() -> tx.execute(s -> {
                 Incident incident = incidentRepository.findById(event.incidentId()).orElse(null);
                 if (incident == null || incident.getAccessibilityAsset() == null) return null;
+                // reopened before this listener ran: the asset stays out of service
+                if (!IncidentService.isClosed(incident.getStatus())) return null;
                 AccessibilityAsset asset = incident.getAccessibilityAsset();
 
                 // a manual MAINTENANCE stays; and another open incident may still need it out of service
                 if (asset.getStatus() != AssetStatus.OUT_OF_SERVICE) return null;
+                // a supervisor closed it by hand: closing an incident must not reopen it
+                if (activityLogService.lastAssetChangeByHuman(asset.getId())) return null;
                 if (incidentRepository.existsByAccessibilityAssetIdAndStatusNotInAndIdNot(asset.getId(), CLOSED, incident.getId())) {
                     activityLogService.log(EntityType.ASSET, asset.getId(), incident.getId(), ActionType.STATUS_CHANGED,
                             ActorType.SYSTEM, null, null, null,

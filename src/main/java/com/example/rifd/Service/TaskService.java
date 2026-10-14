@@ -109,7 +109,7 @@ public class TaskService {
     public TaskDTOOut cancel(Long taskId, String reason, Long requestedActorId) {
         Task task = getActionableTask(taskId);
         Long actorId = currentUser.actorId(requestedActorId);
-        incidentService.validateActor(actorId);
+        incidentService.validateOperator(actorId);
 
         TaskStatus old = task.getStatus();
         task.setStatus(TaskStatus.CANCELLED);
@@ -120,7 +120,11 @@ public class TaskService {
         staffService.releaseIfIdle(task.getStaff());
         notificationService.notifyStaff(task.getStaff().getId(), task.getIncident().getId(), NotificationType.TASK_CANCELLED,
                 "Task " + task.getIncident().getCode() + " cancelled: " + reason.trim(), Severity.LOW);
-        incidentService.reopenIfUnstaffed(task.getIncident().getId());
+        Incident incident = task.getIncident();
+        if (incidentService.reopenIfUnstaffed(incident.getId(), true)) {
+            assignmentService.escalate(incident, "Operator pulled the last staff member off ("
+                    + reason.trim() + "): nobody is on it now");
+        }
         return DTOMapper.toDTO(task);
     }
 
@@ -170,17 +174,23 @@ public class TaskService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onIncidentResolved(IncidentResolvedEvent event) {
         try {
+            // reopened before this listener ran: its tasks stay
+            if (!IncidentService.isClosed(incidentService.getIncidentForUpdate(event.incidentId()).getStatus())) return;
             List<Task> open = taskRepository.findByIncidentIdAndStatusNotIn(event.incidentId(),
                     List.of(TaskStatus.DONE, TaskStatus.REJECTED, TaskStatus.CANCELLED));
             for (Task task : open) {
                 TaskStatus old = task.getStatus();
-                task.setStatus(TaskStatus.CANCELLED);
+                // staff already on site did the work: DONE on a real resolution, CANCELLED otherwise
+                boolean worked = event.finalStatus() == IncidentStatus.RESOLVED && old == TaskStatus.ON_SITE;
+                task.setStatus(worked ? TaskStatus.DONE : TaskStatus.CANCELLED);
                 task.setCompletedAt(LocalDateTime.now());
                 save(task, ActionType.STATUS_CHANGED, ActorType.SYSTEM, null, old,
                         "Incident closed as " + event.finalStatus());
                 staffService.releaseIfIdle(task.getStaff());
-                notificationService.notifyStaff(task.getStaff().getId(), event.incidentId(), NotificationType.TASK_CANCELLED,
-                        "Task cancelled: " + task.getIncident().getCode() + " was closed", Severity.LOW);
+                if (!worked) {
+                    notificationService.notifyStaff(task.getStaff().getId(), event.incidentId(), NotificationType.TASK_CANCELLED,
+                            "Task cancelled: " + task.getIncident().getCode() + " was closed", Severity.LOW);
+                }
             }
         } catch (Exception e) {
             log.error("Could not close the tasks of incident #{}", event.incidentId(), e);

@@ -21,7 +21,7 @@ public record AlertDTOIn(
         @Size(max = 10, message = "language is too long")
         String language,
 
-        @Size(max = 255, message = "attachmentUrl is too long")
+        @Size(max = 1000, message = "attachmentUrl is too long")
         String attachmentUrl,
 
         Double x,

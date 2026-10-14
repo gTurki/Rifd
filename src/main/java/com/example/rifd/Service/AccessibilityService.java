@@ -164,7 +164,14 @@ public class AccessibilityService {
     public AccessibilityAssetDTOOut updateAssetStatus(Long assetId, AssetStatus status, Long actorId) {
         return locked(() -> tx.execute(s -> {
             AccessibilityAsset asset = getAsset(assetId);
-            if (asset.getStatus() == status) return DTOMapper.toDTO(asset);
+            if (asset.getStatus() == status) {
+                // already down because of an incident: record that a human now owns this state
+                if (status != AssetStatus.OPERATIONAL) {
+                    activityLogService.log(EntityType.ASSET, asset.getId(), null, ActionType.STATUS_CHANGED,
+                            ActorType.HUMAN, actorId, status.name(), status.name(), asset.getName() + ": confirmed manually");
+                }
+                return DTOMapper.toDTO(asset);
+            }
 
             if (status == AssetStatus.OPERATIONAL) {
                 restore(asset, null, ActorType.HUMAN, actorId, "Manual change");

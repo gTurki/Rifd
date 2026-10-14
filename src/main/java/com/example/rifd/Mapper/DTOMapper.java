@@ -51,7 +51,8 @@ public final class DTOMapper {
                 alert.getRawText(), alert.getLanguage(), alert.getAttachmentUrl(), alert.getX(), alert.getY(),
                 idOf(alert.getZone()), alert.getReceivedAt(), alert.getProcessedAt(), alert.getAiSeverity(),
                 alert.getAiCategory(), alert.getAiConfidence(), alert.getStatus(), idOf(alert.getIncident()),
-                alert.getMergeScore(), alert.getCreatedAt(), alert.getUpdatedAt());
+                alert.getMergeScore(), alert.getCreatedAt(), alert.getUpdatedAt(),
+                idOf(alert.getReporter()), alert.getReporterTrust());
     }
 
     public static IncidentDTOOut toDTO(Incident incident) {

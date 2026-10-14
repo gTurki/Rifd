@@ -74,10 +74,17 @@ Content-Type: application/json
 { "incidentId": 3, "staffId": 25, "notes": "Bring the wet-floor sign", "actorStaffId": 1 }
 
 ### 15) Plan B for the demo: break an asset by hand (supervisor)
+###     NOTE: closing the incident will NOT bring it back (set by a human) -> run 15b after closing
 PATCH http://localhost:8080/api/v1/accessibility/assets/1/status
 Content-Type: application/json
 
 { "status": "OUT_OF_SERVICE", "actorStaffId": 3 }
+
+### 15b) Bring the asset back by hand (after closing the incident)
+PATCH http://localhost:8080/api/v1/accessibility/assets/1/status
+Content-Type: application/json
+
+{ "status": "OPERATIONAL", "actorStaffId": 3 }
 
 ### 16) Login (when security.enabled=true) -> use the token as: Authorization: Bearer <token>
 POST http://localhost:8080/api/v1/auth/login
@@ -96,7 +103,8 @@ GET http://localhost:8080/api/v1/playbooks?active=true
 ### Run 0 (reset) + 1 (start) first. Ids below assume a fresh reset: INC-0001 = 1 (crowd), 2 (elevator), 3 (spill).
 
 ### 17) Operator cancels a task (any open state) -> CANCELLED, staff AVAILABLE, TASK_CANCELLED notification,
-###     incident back to OPEN if nobody is left on it (only from ASSIGNED)
+###     incident back to OPEN + ESCALATED if nobody is left on it (from ASSIGNED or IN_PROGRESS,
+###     unless another task is already DONE)
 POST http://localhost:8080/api/v1/tasks/1/cancel
 Content-Type: application/json
 

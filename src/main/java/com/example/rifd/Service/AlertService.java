@@ -5,13 +5,9 @@ import com.example.rifd.DTOIn.AlertDTOIn;
 import com.example.rifd.DTOOut.AlertDTOOut;
 import com.example.rifd.Entity.Alert;
 import com.example.rifd.Entity.Incident;
+import com.example.rifd.Entity.TelegramReporter;
 import com.example.rifd.Entity.Zone;
-import com.example.rifd.Enum.ActionType;
-import com.example.rifd.Enum.ActorType;
-import com.example.rifd.Enum.AlertStatus;
-import com.example.rifd.Enum.EntityType;
-import com.example.rifd.Enum.IncidentCategory;
-import com.example.rifd.Enum.Severity;
+import com.example.rifd.Enum.*;
 import com.example.rifd.Mapper.DTOMapper;
 import com.example.rifd.Repository.AlertRepository;
 import com.example.rifd.Repository.ZoneRepository;
@@ -73,8 +69,14 @@ public class AlertService {
     // NOT @Transactional: each step commits on its own, and the AI call runs outside any transaction
 
     public AlertDTOOut ingest(AlertDTOIn dto) {
+        return ingest(dto, null, null);
+    }
+
+    // Telegram bot: same pipeline + who sent it. Not in AlertDTOIn on purpose: POST /alerts is open
+    // to external sources, and they must not be able to claim a trust level
+    public AlertDTOOut ingest(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust) {
         // 1) save raw alert as NEW + broadcast (live counter)
-        Alert alert = transactionTemplate.execute(status -> saveNew(dto));
+        Alert alert = transactionTemplate.execute(status -> saveNew(dto, reporter, reporterTrust));
 
         // 2) classify: AI, or rules on failure/timeout
         Classification classification = classify(alert);
@@ -106,7 +108,7 @@ public class AlertService {
                 .toList();
     }
 
-    private Alert saveNew(AlertDTOIn dto) {
+    private Alert saveNew(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust) {
         Alert alert = new Alert();
         alert.setSource(dto.source());
         alert.setSourceReference(dto.sourceReference());
@@ -125,6 +127,8 @@ public class AlertService {
         alert.setX(hasPosition ? dto.x() : zone == null ? null : zone.getCenterX());
         alert.setY(hasPosition ? dto.y() : zone == null ? null : zone.getCenterY());
 
+        alert.setReporter(reporter);
+        alert.setReporterTrust(reporterTrust);
         alert.setStatus(AlertStatus.NEW);
         alertRepository.save(alert);
 

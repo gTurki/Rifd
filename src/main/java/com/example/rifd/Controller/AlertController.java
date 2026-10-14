@@ -10,6 +10,12 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.example.rifd.Telegram.TelegramAttachmentService;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+
+import java.time.Duration;
 
 @RestController
 @RequestMapping("/api/v1/alerts")
@@ -18,10 +24,24 @@ public class AlertController {
 
     private final AlertService alertService;
     private final CurrentUser currentUser;
+    private final TelegramAttachmentService telegramAttachmentService;
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(@PathVariable Long id) {
         return ResponseEntity.ok(alertService.getById(id));
+    }
+
+    // voice / photos from Telegram, streamed through the server: the bot token never reaches the browser
+    // album: ?index=0..2 (count = number of ids after "tg:" in attachmentUrl, comma separated)
+    @GetMapping("/{id}/attachment")
+    public ResponseEntity<byte[]> attachment(@PathVariable Long id,
+                                             @RequestParam(defaultValue = "0") int index) {
+        TelegramAttachmentService.Attachment file = telegramAttachmentService.getForAlert(id, index);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePrivate())
+                .body(file.bytes());
     }
 
     @PostMapping("/{id}/dismiss")

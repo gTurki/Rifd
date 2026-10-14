@@ -1,9 +1,6 @@
 package com.example.rifd.DTOOut;
 
-import com.example.rifd.Enum.AlertSource;
-import com.example.rifd.Enum.AlertStatus;
-import com.example.rifd.Enum.IncidentCategory;
-import com.example.rifd.Enum.Severity;
+import com.example.rifd.Enum.*;
 
 import java.time.LocalDateTime;
 
@@ -26,7 +23,9 @@ public record AlertDTOOut(
         Long incidentId,
         Double mergeScore,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        Long reporterId,
+        ReporterTrust reporterTrust
 ) {
 }
 

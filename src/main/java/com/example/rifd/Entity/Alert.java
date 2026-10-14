@@ -23,6 +23,8 @@ public class Alert extends BaseEntity {
 
     private String language;
 
+    // tg:<file_id> or tg:<id1>,<id2>,<id3> for a Telegram album (3 ids exceed 255)
+    @Column(length = 1000)
     private String attachmentUrl;
 
     private Double x;
@@ -52,4 +54,12 @@ public class Alert extends BaseEntity {
     private Incident incident;
 
     private Double mergeScore;
+
+    // Telegram only: who sent it, and how trusted they were at that moment
+    @ManyToOne
+    @JoinColumn(name = "reporter_id")
+    private TelegramReporter reporter;
+
+    @Enumerated(EnumType.STRING)
+    private ReporterTrust reporterTrust;
 }

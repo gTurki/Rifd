@@ -106,8 +106,10 @@ public class AccessibilityService {
                 Incident incident = incidentRepository.findById(event.incidentId()).orElse(null);
                 if (incident == null || IncidentService.isClosed(incident.getStatus())) return null;
                 AccessibilityAsset asset = getAsset(event.assetId());
-                takeOutOfService(asset, AssetStatus.OUT_OF_SERVICE, incident, ActorType.SYSTEM, null);
-                return null;
+                // a manual MAINTENANCE stays MAINTENANCE (otherwise closing the incident would bring it back)
+                AssetStatus target = asset.getStatus() == AssetStatus.MAINTENANCE
+                        ? AssetStatus.MAINTENANCE : AssetStatus.OUT_OF_SERVICE;
+                takeOutOfService(asset, target, incident, ActorType.SYSTEM, null);                return null;
             }));
         } catch (Exception e) {
             log.error("Accessibility handling failed for incident #{}", event.incidentId(), e);

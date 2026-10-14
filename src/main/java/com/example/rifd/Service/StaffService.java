@@ -74,6 +74,7 @@ public class StaffService {
     public StaffDTOOut updateStatus(Long staffId, StaffStatus newStatus) {
         Staff staff = getStaff(staffId);
         if (staff.getStatus() == newStatus) return DTOMapper.toDTO(staff);
+        if (newStatus == StaffStatus.BUSY) throw new ApiException("BUSY is set by tasks only");
 
         // BUSY is owned by the task cycle: no AVAILABLE / OFF_DUTY while a task is still open
         if (newStatus != StaffStatus.BUSY && taskRepository.existsByStaffIdAndStatusIn(staffId, ACTIVE_TASK)) {

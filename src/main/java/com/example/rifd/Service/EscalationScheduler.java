@@ -19,6 +19,7 @@ public class EscalationScheduler {
 
     private final TaskRepository taskRepository;
     private final TaskService taskService;
+    private final SimulationService simulationService;
 
     @Value("${escalation.enabled:true}")
     private boolean enabled;
@@ -28,7 +29,7 @@ public class EscalationScheduler {
 
     @Scheduled(fixedDelayString = "${escalation.check-interval-ms:30000}", initialDelay = 30000)
     public void escalateOverdueTasks() {
-        if (!enabled) return;
+        if (!enabled || simulationService.isResetting()) return;
         LocalDateTime deadline = LocalDateTime.now().minusSeconds(timeoutSeconds);
         for (Task task : taskRepository.findByStatusAndIsEscalatedFalseAndAssignedAtBefore(TaskStatus.PENDING, deadline)) {
             try {

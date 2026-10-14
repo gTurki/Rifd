@@ -22,6 +22,9 @@ import com.example.rifd.Mapper.DTOMapper;
 import com.example.rifd.Repository.AlertRepository;
 import com.example.rifd.Repository.IncidentRepository;
 import com.example.rifd.Repository.StaffRepository;
+import com.example.rifd.Repository.TaskRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -57,6 +60,9 @@ public class IncidentService {
 
     private static final int TITLE_MAX = 80;
 
+    private static final List<String> ASSET_WORDS = List.of("مصعد", "منحدر", "كرسي", "مدخل", "دوره مياه",
+            "elevator", "lift", "ramp", "wheelchair", "entrance", "toilet", "shuttle");
+
     private final IncidentRepository incidentRepository;
     private final AlertRepository alertRepository;
     private final StaffRepository staffRepository;
@@ -66,6 +72,8 @@ public class IncidentService {
     private final AccessibilityService accessibilityService;
     private final ApplicationEventPublisher eventPublisher;
     private final DashboardService dashboardService;
+    private final EntityManager entityManager;
+    private final TaskRepository taskRepository;
 
     @Value("${event.severity-boost-radius:100}")
     private double eventBoostRadius;
@@ -79,6 +87,18 @@ public class IncidentService {
     public Incident getIncident(Long incidentId) {
         return incidentRepository.findById(incidentId)
                 .orElseThrow(() -> new ApiException("Incident not found"));
+    }
+
+    // SELECT ... FOR UPDATE + fresh state: the pipeline and the operator never overwrite each other
+    @Transactional
+    public Incident getIncidentForUpdate(Long incidentId) {
+        Incident incident = entityManager.find(Incident.class, incidentId);
+        if (incident == null) throw new ApiException("Incident not found");
+        // already locked in this transaction -> keep it (a refresh would drop unsaved changes)
+        if (entityManager.getLockMode(incident) != LockModeType.PESSIMISTIC_WRITE) {
+            entityManager.refresh(incident, LockModeType.PESSIMISTIC_WRITE);
+        }
+        return incident;
     }
 
     @Transactional(readOnly = true)
@@ -119,8 +139,7 @@ public class IncidentService {
         Severity severity = event.isPresent() ? raise(baseSeverity) : baseSeverity;
         incident.setSeverity(severity);
 
-        String assetNote = linkAccessibilityAsset(incident);
-
+        String assetNote = linkAccessibilityAsset(incident, alert.getRawText());
         incidentRepository.save(incident);
         alert.setIncident(incident);
 
@@ -162,8 +181,7 @@ public class IncidentService {
 
         // the first alert may have been too far from the asset; a later (closer) alert can still link it
         if (incident.getAccessibilityAsset() == null) {
-            String assetNote = linkAccessibilityAsset(incident);
-            if (incident.getAccessibilityAsset() != null) {
+            String assetNote = linkAccessibilityAsset(incident, alert.getRawText());            if (incident.getAccessibilityAsset() != null) {
                 activityLogService.log(EntityType.INCIDENT, id, id, ActionType.STATUS_CHANGED, ActorType.SYSTEM, null,
                         "affectsAccessibility=false", "affectsAccessibility=true",
                         "Accessibility impact detected on merge" + assetNote);
@@ -198,6 +216,20 @@ public class IncidentService {
         incidentRepository.save(incident);
         broadcastIncident(incident);
         return incident;
+    }
+
+    // an alert was taken out of this incident by the operator
+    @Transactional
+    public void detachAlert(Long incidentId, Long alertId, String reason, Long actorId) {
+        Incident incident = getIncidentForUpdate(incidentId);
+        int before = incident.getAlertCount() == null ? 0 : incident.getAlertCount();
+        int after = Math.max(0, before - 1);
+        incident.setAlertCount(after);
+        incidentRepository.save(incident);
+        activityLogService.log(EntityType.INCIDENT, incidentId, incidentId, ActionType.STATUS_CHANGED, ActorType.HUMAN,
+                actorId, String.valueOf(before), String.valueOf(after),
+                "Alert #" + alertId + " removed: " + reason + (after == 0 ? " (no alerts left: consider false alarm)" : ""));
+        broadcastIncident(incident);
     }
 
     // ---------------- operator actions ----------------
@@ -278,7 +310,7 @@ public class IncidentService {
     @Transactional
     public IncidentStatus changeStatus(Long incidentId, IncidentStatus newStatus,
                                        ActorType actorType, Long actorStaffId) {
-        Incident incident = getIncident(incidentId);
+        Incident incident = getIncidentForUpdate(incidentId);
         IncidentStatus current = incident.getStatus();
 
         if (!isAllowedTransition(current, newStatus)) {
@@ -304,6 +336,21 @@ public class IncidentService {
         return newStatus;
     }
 
+    // a rejected / timed-out / cancelled task left nobody on it: ASSIGNED -> OPEN
+    // (IN_PROGRESS stays: somebody already started working on it)
+    @Transactional
+    public void reopenIfUnstaffed(Long incidentId) {
+        Incident incident = getIncidentForUpdate(incidentId);
+        if (incident.getStatus() != IncidentStatus.ASSIGNED) return;
+        if (taskRepository.countByIncidentIdAndStatusIn(incidentId, StaffService.ACTIVE_TASK) > 0) return;
+
+        incident.setStatus(IncidentStatus.OPEN);
+        incidentRepository.save(incident);
+        activityLogService.log(EntityType.INCIDENT, incidentId, incidentId, ActionType.STATUS_CHANGED, ActorType.SYSTEM,
+                null, IncidentStatus.ASSIGNED.name(), IncidentStatus.OPEN.name(), "No active task left on the incident");
+        broadcastIncident(incident);
+    }
+
     public void broadcastIncident(Incident incident) {
         broadcastService.send(BroadcastService.INCIDENTS, "INCIDENT_UPDATED", DTOMapper.toDTO(incident));
     }
@@ -322,11 +369,16 @@ public class IncidentService {
     // ---------------- helpers ----------------
 
     public Incident getOpenIncident(Long incidentId) {
-        Incident incident = getIncident(incidentId);
+        Incident incident = getIncidentForUpdate(incidentId);
         if (isClosed(incident.getStatus())) {
             throw new ApiException("Incident is already closed");
         }
         return incident;
+    }
+
+    private static boolean mentionsAsset(String text) {
+        String t = RuleBasedClassifier.normalize(text);
+        return ASSET_WORDS.stream().map(RuleBasedClassifier::normalize).anyMatch(t::contains);
     }
 
     // before Security: actorStaffId comes from the request and is optional
@@ -358,8 +410,10 @@ public class IncidentService {
                 && AccessibilityService.distance(zone.getCenterX(), zone.getCenterY(), x, y) <= eventBoostRadius;
     }
 
-    private String linkAccessibilityAsset(Incident incident) {
+    private String linkAccessibilityAsset(Incident incident, String alertText) {
         if (!ACCESSIBILITY_RELATED.contains(incident.getCategory())) return "";
+        // a generic technical failure (screen, power...) must not take a nearby ramp out of service
+        if (incident.getCategory() == IncidentCategory.TECHNICAL_FAILURE && !mentionsAsset(alertText)) return "";
         Long zoneId = incident.getZone() == null ? null : incident.getZone().getId();
 
         return accessibilityService.findNearestAsset(incident.getX(), incident.getY(), zoneId, assetMatchRadius)
@@ -387,4 +441,6 @@ public class IncidentService {
         String t = text.trim();
         return t.length() <= max ? t : t.substring(0, max - 1).trim() + "…";
     }
+
+
 }

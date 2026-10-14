@@ -99,7 +99,7 @@ public class SecurityConfig {
 
                         // field staff: own tasks / notifications / location (ownership is checked in the services)
                         .requestMatchers(HttpMethod.GET, "/api/v1/tasks", "/api/v1/tasks/*",
-                                "/api/v1/notifications", "/api/v1/staff/*").hasAnyRole(ALL_ROLES)
+                                "/api/v1/notifications", "/api/v1/staff/*", "/api/v1/auth/me").hasAnyRole(ALL_ROLES)
                         .requestMatchers(HttpMethod.POST, "/api/v1/tasks/*/accept", "/api/v1/tasks/*/reject")
                         .hasAnyRole(ALL_ROLES)
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/tasks/*/status", "/api/v1/staff/*/location",

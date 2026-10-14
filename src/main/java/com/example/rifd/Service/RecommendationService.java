@@ -170,6 +170,13 @@ public class RecommendationService {
         }));
     }
 
+    // operator asks for a fresh plan (after a reject, a manual assignment, or a plan that was not fully staffed)
+    public List<RecommendationDTOOut> regenerateNow(Long incidentId) {
+        tx.execute(s -> incidentService.getOpenIncident(incidentId)); // 400 if missing or closed
+        regenerate(incidentId, false); // supersedes PENDING, counts the staff already on it
+        return tx.execute(s -> byIncident(incidentId));
+    }
+
     // ---------------- generation ----------------
 
     private void regenerate(Long incidentId, boolean onCreate) {

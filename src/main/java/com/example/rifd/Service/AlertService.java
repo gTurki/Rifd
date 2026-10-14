@@ -142,10 +142,18 @@ public class AlertService {
         alert.setProcessedAt(LocalDateTime.now());
         alert.setStatus(AlertStatus.PROCESSED);
 
-        Incident incident = mergeService.findMatch(alert)
-                .map(m -> incidentService.mergeAlert(m.incident(), alert, m.score(), m.decidedBy()))
-                .orElseGet(() -> incidentService.createFromAlert(alert, c.summary(), c.decidedBy()));
-
+        Incident incident = null;
+        Optional<MergeService.Match> match = mergeService.findMatch(alert);
+        if (match.isPresent()) {
+            // lock + fresh state: the operator may have closed or changed it while we were scoring
+            Incident target = incidentService.getIncidentForUpdate(match.get().incident().getId());
+            if (!IncidentService.isClosed(target.getStatus())) {
+                incident = incidentService.mergeAlert(target, alert, match.get().score(), match.get().decidedBy());
+            }
+        }
+        if (incident == null) {
+            incident = incidentService.createFromAlert(alert, c.summary(), c.decidedBy());
+        }
         alertRepository.save(alert);
 
         // aiDecisions / fallbackDecisions in the stats are counted from this row's actorType
@@ -184,6 +192,41 @@ public class AlertService {
                 : Math.max(0, Math.min(1, response.confidence()));
 
         return Optional.of(new Classification(category, severity, confidence, response.summary(), ActorType.AI));
+    }
+
+    @Transactional(readOnly = true)
+    public AlertDTOOut getById(Long alertId) {
+        return DTOMapper.toDTO(alertRepository.findById(alertId).orElseThrow(() -> new ApiException("Alert not found")));
+    }
+
+    // operator: noise or wrongly merged -> DISMISSED and taken out of its incident (under the pipeline lock)
+    public AlertDTOOut dismiss(Long alertId, String reason, Long actorId) {
+        pipelineLock.lock();
+        try {
+            return transactionTemplate.execute(s -> {
+                incidentService.validateActor(actorId);
+                Alert alert = alertRepository.findById(alertId).orElseThrow(() -> new ApiException("Alert not found"));
+                if (alert.getStatus() == AlertStatus.DISMISSED) return DTOMapper.toDTO(alert);
+
+                AlertStatus old = alert.getStatus();
+                Incident incident = alert.getIncident();
+                alert.setStatus(AlertStatus.DISMISSED);
+                alert.setIncident(null);
+                alertRepository.save(alert);
+                if (incident != null) incidentService.detachAlert(incident.getId(), alertId, reason.trim(), actorId);
+
+                activityLogService.log(EntityType.ALERT, alertId, incident == null ? null : incident.getId(),
+                        ActionType.STATUS_CHANGED, ActorType.HUMAN, actorId, old.name(), AlertStatus.DISMISSED.name(),
+                        "Dismissed: " + reason.trim());
+
+                AlertDTOOut out = DTOMapper.toDTO(alert);
+                broadcastService.send(BroadcastService.ALERTS, "ALERT_UPDATED", out);
+                dashboardService.broadcastStats();
+                return out;
+            });
+        } finally {
+            pipelineLock.unlock();
+        }
     }
 
     // ---------------- helpers ----------------

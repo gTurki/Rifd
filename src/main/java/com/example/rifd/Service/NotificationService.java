@@ -12,6 +12,7 @@ import com.example.rifd.Mapper.DTOMapper;
 import com.example.rifd.Repository.IncidentRepository;
 import com.example.rifd.Repository.NotificationRepository;
 import com.example.rifd.Repository.StaffRepository;
+import com.example.rifd.Security.CurrentUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ public class NotificationService {
     private final StaffRepository staffRepository;
     private final IncidentRepository incidentRepository;
     private final BroadcastService broadcastService;
+    private final CurrentUser currentUser;
 
     @Transactional
     public void notifyStaff(Long staffId, Long incidentId, NotificationType type, String message, Severity priority) {
@@ -74,6 +76,7 @@ public class NotificationService {
     public NotificationDTOOut markRead(Long notificationId) {
         Notification n = notificationRepository.findById(notificationId)
                 .orElseThrow(() -> new ApiException("Notification not found"));
+        if (n.getRecipientStaff() != null) currentUser.requireSelfIfField(n.getRecipientStaff().getId());
         if (n.getReadAt() == null) { // idempotent
             n.setReadAt(LocalDateTime.now());
             notificationRepository.save(n);

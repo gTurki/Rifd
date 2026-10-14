@@ -140,6 +140,7 @@ public class AssignmentService {
         if (taskRepository.existsByIncidentIdAndStaffIdAndStatusIn(incidentId, staffId, StaffService.ACTIVE_TASK)) {
             throw new ApiException("Staff already has an open task on this incident");
         }
+        if (!StaffService.isOnShift(staff, LocalTime.now())) throw new ApiException("Staff is off shift");
         if (staff.getStatus() != StaffStatus.AVAILABLE || !staffService.tryClaim(staff)) {
             throw new ApiException("Staff is not available");
         }
@@ -150,6 +151,17 @@ public class AssignmentService {
                 ActorType.HUMAN, operatorId, "Manual assignment", notes);
 
         incidentService.changeStatus(incidentId, IncidentStatus.ASSIGNED, ActorType.HUMAN, operatorId);
+
+        // the operator decided manually: a pending plan would double-assign if accepted later
+        // (POST /incidents/{id}/recommendations/regenerate builds a fresh one that counts current staff)
+        for (Recommendation pending : recommendationRepository.findByIncidentIdAndStatus(incidentId, RecommendationStatus.PENDING)) {
+            pending.setStatus(RecommendationStatus.SUPERSEDED);
+            recommendationRepository.save(pending);
+            activityLogService.log(EntityType.RECOMMENDATION, pending.getId(), incidentId, ActionType.STATUS_CHANGED,
+                    ActorType.HUMAN, operatorId, RecommendationStatus.PENDING.name(), RecommendationStatus.SUPERSEDED.name(),
+                    "Superseded: operator assigned staff manually");
+            broadcastService.send(BroadcastService.RECOMMENDATIONS, "RECOMMENDATION_UPDATED", DTOMapper.toDTO(pending));
+        }
         return DTOMapper.toDTO(task);
     }
 

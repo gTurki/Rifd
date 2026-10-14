@@ -5,11 +5,7 @@ import com.example.rifd.DTOOut.TaskDTOOut;
 import com.example.rifd.Entity.Incident;
 import com.example.rifd.Entity.Staff;
 import com.example.rifd.Entity.Task;
-import com.example.rifd.Enum.ActionType;
-import com.example.rifd.Enum.ActorType;
-import com.example.rifd.Enum.EntityType;
-import com.example.rifd.Enum.IncidentStatus;
-import com.example.rifd.Enum.TaskStatus;
+import com.example.rifd.Enum.*;
 import com.example.rifd.Events.IncidentResolvedEvent;
 import com.example.rifd.Mapper.DTOMapper;
 import com.example.rifd.Repository.TaskRepository;
@@ -39,6 +35,7 @@ public class TaskService {
     private final ActivityLogService activityLogService;
     private final BroadcastService broadcastService;
     private final CurrentUser currentUser;
+    private final NotificationService notificationService;
 
     // ---------------- read ----------------
 
@@ -95,6 +92,7 @@ public class TaskService {
 
         staffService.releaseIfIdle(task.getStaff());
         assignmentService.reassign(task, "rejected by staff");
+        incidentService.reopenIfUnstaffed(task.getIncident().getId());
         return DTOMapper.toDTO(task);
     }
 
@@ -106,12 +104,33 @@ public class TaskService {
         return DTOMapper.toDTO(move(task, newStatus, notes, ActorType.HUMAN, actorId));
     }
 
+    // operator pulls a staff member off a task (any open state), e.g. severity lowered or needed elsewhere
+    @Transactional
+    public TaskDTOOut cancel(Long taskId, String reason, Long requestedActorId) {
+        Task task = getActionableTask(taskId);
+        Long actorId = currentUser.actorId(requestedActorId);
+        incidentService.validateActor(actorId);
+
+        TaskStatus old = task.getStatus();
+        task.setStatus(TaskStatus.CANCELLED);
+        task.setCompletedAt(LocalDateTime.now());
+        task.setRejectionReason(reason.trim());
+        save(task, ActionType.STATUS_CHANGED, ActorType.HUMAN, actorId, old, "Cancelled by operator: " + reason.trim());
+
+        staffService.releaseIfIdle(task.getStaff());
+        notificationService.notifyStaff(task.getStaff().getId(), task.getIncident().getId(), NotificationType.TASK_CANCELLED,
+                "Task " + task.getIncident().getCode() + " cancelled: " + reason.trim(), Severity.LOW);
+        incidentService.reopenIfUnstaffed(task.getIncident().getId());
+        return DTOMapper.toDTO(task);
+    }
+
     // ---------------- system actions ----------------
 
     // StaffMovementScheduler: the staff member reached the incident
     @Transactional
     public void markArrived(Long taskId) {
         Task task = getTask(taskId);
+        lockIncident(task);
         if (task.getStatus() == TaskStatus.EN_ROUTE && !IncidentService.isClosed(task.getIncident().getStatus())) {
             move(task, TaskStatus.ON_SITE, null, ActorType.SYSTEM, null);
         }
@@ -121,6 +140,7 @@ public class TaskService {
     @Transactional
     public void escalateIfOverdue(Long taskId, LocalDateTime deadline) {
         Task task = getTask(taskId);
+        lockIncident(task);
         // re-check inside the transaction: the staff member may have accepted a second ago
         if (task.getStatus() != TaskStatus.PENDING || Boolean.TRUE.equals(task.getIsEscalated())
                 || task.getAssignedAt() == null || !task.getAssignedAt().isBefore(deadline)) {
@@ -134,11 +154,14 @@ public class TaskService {
                 "Not accepted in time by " + task.getStaff().getName());
 
         staffService.releaseIfIdle(task.getStaff());
+        notificationService.notifyStaff(task.getStaff().getId(), incident.getId(), NotificationType.TASK_CANCELLED,
+                "Task " + incident.getCode() + " was re-assigned: not accepted in time", incident.getSeverity());
         if (IncidentService.isClosed(incident.getStatus())) return;
 
         assignmentService.escalate(incident, "Task #" + task.getId() + " was not accepted in time by "
                 + task.getStaff().getName());
         assignmentService.reassign(task, "not accepted in time");
+        incidentService.reopenIfUnstaffed(incident.getId());
     }
 
     // incident closed -> its open tasks are cancelled and their staff released
@@ -156,6 +179,8 @@ public class TaskService {
                 save(task, ActionType.STATUS_CHANGED, ActorType.SYSTEM, null, old,
                         "Incident closed as " + event.finalStatus());
                 staffService.releaseIfIdle(task.getStaff());
+                notificationService.notifyStaff(task.getStaff().getId(), event.incidentId(), NotificationType.TASK_CANCELLED,
+                        "Task cancelled: " + task.getIncident().getCode() + " was closed", Severity.LOW);
             }
         } catch (Exception e) {
             log.error("Could not close the tasks of incident #{}", event.incidentId(), e);
@@ -186,11 +211,16 @@ public class TaskService {
 
         save(task, ActionType.STATUS_CHANGED, actorType, actorId, current, null);
 
-        if (next == TaskStatus.EN_ROUTE || next == TaskStatus.ON_SITE) {
-            incidentService.changeStatus(task.getIncident().getId(), IncidentStatus.IN_PROGRESS, actorType, actorId);
+        Long incidentId = task.getIncident().getId();
+        if (next == TaskStatus.EN_ROUTE || next == TaskStatus.ON_SITE || next == TaskStatus.DONE) {
+            incidentService.changeStatus(incidentId, IncidentStatus.IN_PROGRESS, actorType, actorId);
         }
         if (next == TaskStatus.DONE) {
             staffService.releaseIfIdle(task.getStaff()); // the incident itself is closed manually by the operator
+            if (taskRepository.countByIncidentIdAndStatusIn(incidentId, StaffService.ACTIVE_TASK) == 0) {
+                activityLogService.log(EntityType.INCIDENT, incidentId, incidentId, ActionType.STATUS_CHANGED,
+                        ActorType.SYSTEM, null, null, null, "All tasks are done: ready to be resolved");
+            }
         }
         return task;
     }
@@ -201,9 +231,15 @@ public class TaskService {
         return taskRepository.findById(taskId).orElseThrow(() -> new ApiException("Task not found"));
     }
 
+    // lock the incident row first (same order everywhere -> no deadlocks with the pipeline)
+    private void lockIncident(Task task) {
+        incidentService.getIncidentForUpdate(task.getIncident().getId());
+    }
+
     private Task getActionableTask(Long taskId) {
         Task task = getTask(taskId);
         currentUser.requireSelfIfField(task.getStaff().getId());
+        lockIncident(task);
         if (IncidentService.isClosed(task.getIncident().getStatus())) {
             throw new ApiException("Incident is already closed");
         }

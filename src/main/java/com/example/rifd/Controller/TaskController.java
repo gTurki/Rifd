@@ -54,4 +54,9 @@ public class TaskController {
     public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestBody @Valid TaskStatusDTOIn dto) {
         return ResponseEntity.ok(taskService.updateStatus(id, dto.status(), dto.notes(), dto.actorStaffId()));
     }
+
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<?> cancel(@PathVariable Long id, @RequestBody @Valid RejectDTOIn dto) {
+        return ResponseEntity.ok(taskService.cancel(id, dto.reason(), dto.actorStaffId()));
+    }
 }

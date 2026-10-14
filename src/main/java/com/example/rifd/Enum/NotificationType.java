@@ -4,5 +4,6 @@ public enum NotificationType {
     NEW_TASK,
     ACCESSIBILITY_ALERT,
     ESCALATION,
-    ROUTE_CHANGE
+    ROUTE_CHANGE,
+    TASK_CANCELLED
 }

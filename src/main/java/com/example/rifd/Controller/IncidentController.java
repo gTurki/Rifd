@@ -102,4 +102,9 @@ public class IncidentController {
     public ResponseEntity<?> tasks(@PathVariable Long id) {
         return ResponseEntity.ok(taskService.byIncident(id));
     }
+
+    @PostMapping("/{id}/recommendations/regenerate")
+    public ResponseEntity<?> regenerateRecommendation(@PathVariable Long id) {
+        return ResponseEntity.ok(recommendationService.regenerateNow(id));
+    }
 }

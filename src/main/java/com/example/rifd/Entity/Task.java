@@ -40,6 +40,7 @@ public class Task extends BaseEntity {
     private LocalDateTime arrivedAt;
     private LocalDateTime completedAt;
 
+    @Column(length = 500)
     private String rejectionReason;
 
     private Boolean isEscalated = false;

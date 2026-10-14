@@ -2,17 +2,14 @@ package com.example.rifd.Controller;
 
 import com.example.rifd.DTOIn.AlertBatchDTOIn;
 import com.example.rifd.DTOIn.AlertDTOIn;
+import com.example.rifd.DTOIn.RejectDTOIn;
 import com.example.rifd.Enum.AlertStatus;
+import com.example.rifd.Security.CurrentUser;
 import com.example.rifd.Service.AlertService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/alerts")
@@ -20,6 +17,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class AlertController {
 
     private final AlertService alertService;
+    private final CurrentUser currentUser;
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(alertService.getById(id));
+    }
+
+    @PostMapping("/{id}/dismiss")
+    public ResponseEntity<?> dismiss(@PathVariable Long id, @RequestBody @Valid RejectDTOIn dto) {
+        return ResponseEntity.ok(alertService.dismiss(id, dto.reason(), currentUser.actorId(dto.actorStaffId())));
+    }
 
     @GetMapping
     public ResponseEntity<?> search(@RequestParam(required = false) AlertStatus status,

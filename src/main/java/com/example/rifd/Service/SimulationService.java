@@ -74,6 +74,12 @@ public class SimulationService {
     private volatile int total;
     private volatile double speed = 1;
 
+    private volatile boolean resetting;
+
+    public boolean isResetting() {
+        return resetting;
+    }
+
     public SimulationService(AlertService alertService, AccessibilityService accessibilityService,
                              DashboardService dashboardService, BroadcastService broadcastService,
                              NotificationRepository notificationRepository, TaskRepository taskRepository,
@@ -127,34 +133,38 @@ public class SimulationService {
     // clears all operational data (alerts, incidents, log, tasks, recommendations, notifications) and puts
     // staff, assets and routes back to their initial state. Zones, events, staff, playbooks stay.
     public synchronized SimulationStatusDTOOut reset() {
-        futures.forEach(f -> f.cancel(false));
-        futures.clear();
-        sent.set(0);
-        total = 0;
+        resetting = true; // the schedulers skip their ticks while the tables are cleared
+        try {
+            futures.forEach(f -> f.cancel(false));
+            futures.clear();
+            sent.set(0);
+            total = 0;
 
-        alertService.runExclusive(() -> tx.execute(s -> {
-            // FK order: Notification -> Task -> Recommendation -> ActivityLog -> Alert -> Incident
-            notificationRepository.deleteAllInBatch();
-            taskRepository.deleteAllInBatch();
-            recommendationRepository.deleteAllInBatch();
-            activityLogRepository.deleteAllInBatch();
-            alertRepository.deleteAllInBatch();
-            incidentRepository.deleteAllInBatch();
+            alertService.runExclusive(() -> tx.execute(s -> {
+                // FK order: Notification -> Task -> Recommendation -> ActivityLog -> Alert -> Incident
+                notificationRepository.deleteAllInBatch();
+                taskRepository.deleteAllInBatch();
+                recommendationRepository.deleteAllInBatch();
+                activityLogRepository.deleteAllInBatch();
+                alertRepository.deleteAllInBatch();
+                incidentRepository.deleteAllInBatch();
 
-            accessibilityService.resetAll();
+                accessibilityService.resetAll();
 
-            for (Staff staff : staffRepository.findAll()) {
-                staff.setStatus(StaffStatus.AVAILABLE);
-                double[] home = DataSeeder.homePosition(staff.getHomeZone(), staff.getEmployeeNumber());
-                if (home != null) {
-                    staff.setCurrentX(home[0]);
-                    staff.setCurrentY(home[1]);
+                // bulk update: no @Version conflict with the movement / escalation schedulers
+                LocalDateTime now = LocalDateTime.now();
+                for (Staff staff : staffRepository.findAll()) {
+                    double[] home = DataSeeder.homePosition(staff.getHomeZone(), staff.getEmployeeNumber());
+                    staffRepository.resetStaff(staff.getId(), StaffStatus.AVAILABLE,
+                            home == null ? staff.getCurrentX() : home[0],
+                            home == null ? staff.getCurrentY() : home[1], now);
                 }
-                staff.setLastLocationUpdate(LocalDateTime.now());
-            }
-            ensureActiveEvent();
-            return null;
-        }));
+                ensureActiveEvent();
+                return null;
+            }));
+        } finally {
+            resetting = false;
+        }
 
         broadcastService.send(BroadcastService.STATS, "SIMULATION_RESET", status());
         dashboardService.broadcastStats();

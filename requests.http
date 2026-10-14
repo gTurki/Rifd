@@ -90,3 +90,75 @@ GET http://localhost:8080/api/v1/staff?role=FIELD&status=AVAILABLE
 
 ###
 GET http://localhost:8080/api/v1/playbooks?active=true
+
+
+### ========== Logic-review fixes (handoff section 13.6) ==========
+### Run 0 (reset) + 1 (start) first. Ids below assume a fresh reset: INC-0001 = 1 (crowd), 2 (elevator), 3 (spill).
+
+### 17) Operator cancels a task (any open state) -> CANCELLED, staff AVAILABLE, TASK_CANCELLED notification,
+###     incident back to OPEN if nobody is left on it (only from ASSIGNED)
+POST http://localhost:8080/api/v1/tasks/1/cancel
+Content-Type: application/json
+
+{ "reason": "Severity lowered, one supervisor is enough", "actorStaffId": 1 }
+
+### 18) Fresh recommendation on demand (after a reject / manual assignment / not enough staff)
+###     -> old PENDING = SUPERSEDED, new PENDING with only the missing staff count
+POST http://localhost:8080/api/v1/incidents/1/recommendations/regenerate
+
+### 19) One alert
+GET http://localhost:8080/api/v1/alerts/1
+
+### 20) Dismiss a wrongly merged alert -> DISMISSED, alertCount - 1, ALERT_UPDATED on /topic/alerts, stats updated
+POST http://localhost:8080/api/v1/alerts/5/dismiss
+Content-Type: application/json
+
+{ "reason": "Sensor test message, not a real event", "actorStaffId": 1 }
+
+### 21) Who am I (needs security.enabled=true + the token from step 16). Without a token -> 400 "Not logged in"
+GET http://localhost:8080/api/v1/auth/me
+Authorization: Bearer <paste-token-here>
+
+### 22) LOCK TEST: run this WHILE the simulation is still sending alerts (right after step 1)
+###     -> INC-0001 must stay RESOLVED; later crowd alerts open a NEW incident (INC-0004)
+POST http://localhost:8080/api/v1/incidents/1/resolve
+Content-Type: application/json
+
+{ "resolutionNotes": "Lock test", "actorStaffId": 1 }
+
+###
+GET http://localhost:8080/api/v1/incidents/1
+
+### 23) Long rejection reason (> 255 chars) -> must succeed (column is 500 now)
+POST http://localhost:8080/api/v1/tasks/2/reject
+Content-Type: application/json
+
+{ "reason": "Staff member is assisting another urgent case and cannot leave the current position. Staff member is assisting another urgent case and cannot leave the current position. Staff member is assisting another urgent case and cannot leave the current position. Staff member is assisting another urgent case and cannot leave the current position." }
+
+### 24) ACCEPTED -> DONE directly -> incident IN_PROGRESS + "All tasks are done" in the activity log
+POST http://localhost:8080/api/v1/tasks/3/accept
+
+###
+PATCH http://localhost:8080/api/v1/tasks/3/status
+Content-Type: application/json
+
+{ "status": "DONE" }
+
+###
+GET http://localhost:8080/api/v1/incidents/3/activity
+
+### 25) Manual BUSY is not allowed -> 400 "BUSY is set by tasks only"
+PATCH http://localhost:8080/api/v1/staff/25/status
+Content-Type: application/json
+
+{ "status": "BUSY" }
+
+### 26) MAINTENANCE stays: reset (0) -> put Elevator B2 (asset 1) in MAINTENANCE -> start (1)
+###     -> resolve the elevator incident (13) -> asset 1 must still be MAINTENANCE
+PATCH http://localhost:8080/api/v1/accessibility/assets/1/status
+Content-Type: application/json
+
+{ "status": "MAINTENANCE", "actorStaffId": 3 }
+
+###
+GET http://localhost:8080/api/v1/accessibility/assets

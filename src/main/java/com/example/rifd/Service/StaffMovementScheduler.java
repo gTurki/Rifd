@@ -26,13 +26,15 @@ public class StaffMovementScheduler {
     private final TaskRepository taskRepository;
     private final StaffService staffService;
     private final TaskService taskService;
+    private final SimulationService simulationService;
     private final TransactionTemplate tx;
 
     public StaffMovementScheduler(TaskRepository taskRepository, StaffService staffService, TaskService taskService,
-                                  PlatformTransactionManager transactionManager) {
+                                  SimulationService simulationService, PlatformTransactionManager transactionManager) {
         this.taskRepository = taskRepository;
         this.staffService = staffService;
         this.taskService = taskService;
+        this.simulationService = simulationService;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -48,7 +50,7 @@ public class StaffMovementScheduler {
 
     @Scheduled(fixedDelay = TICK_MS)
     public void tick() {
-        if (!enabled) return;
+        if (!enabled || simulationService.isResetting()) return;
         List<Long> arrived = tx.execute(s -> step());
         if (arrived == null) return;
         for (Long taskId : arrived) {

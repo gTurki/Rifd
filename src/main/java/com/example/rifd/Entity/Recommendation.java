@@ -40,6 +40,7 @@ public class Recommendation extends BaseEntity {
     @Column(nullable = false)
     private RecommendationStatus status = RecommendationStatus.PENDING;
 
+    @Column(length = 500)
     private String rejectionReason;
 
     @ManyToOne(fetch = FetchType.LAZY)

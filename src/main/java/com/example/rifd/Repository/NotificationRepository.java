@@ -25,4 +25,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                                         @Param("unreadOnly") boolean unreadOnly);
 
     List<Notification> findAllByOrderBySentAtDesc();
+
+    List<Notification> findByReadAtIsNullOrderBySentAtDesc();
 }

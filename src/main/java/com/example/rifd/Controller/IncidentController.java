@@ -6,7 +6,11 @@ import com.example.rifd.DTOIn.StatusUpdateDTOIn;
 import com.example.rifd.Enum.IncidentCategory;
 import com.example.rifd.Enum.IncidentStatus;
 import com.example.rifd.Enum.Severity;
+import com.example.rifd.Security.CurrentUser;
 import com.example.rifd.Service.ActivityLogService;
+import com.example.rifd.Service.AssignmentService;
+import com.example.rifd.Service.RecommendationService;
+import com.example.rifd.Service.TaskService;
 import com.example.rifd.Service.IncidentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +31,10 @@ public class IncidentController {
 
     private final IncidentService incidentService;
     private final ActivityLogService activityLogService;
+    private final RecommendationService recommendationService;
+    private final AssignmentService assignmentService;
+    private final TaskService taskService;
+    private final CurrentUser currentUser;
 
     @GetMapping
     public ResponseEntity<?> search(@RequestParam(required = false) IncidentStatus status,
@@ -43,39 +51,55 @@ public class IncidentController {
     @PostMapping("/{id}/acknowledge")
     public ResponseEntity<?> acknowledge(@PathVariable Long id,
                                          @RequestParam(required = false) Long actorStaffId) {
-        return ResponseEntity.ok(incidentService.acknowledge(id, actorStaffId));
+        return ResponseEntity.ok(incidentService.acknowledge(id, currentUser.actorId(actorStaffId)));
     }
 
     @PatchMapping("/{id}/severity")
     public ResponseEntity<?> updateSeverity(@PathVariable Long id,
                                             @RequestBody @Valid SeverityUpdateDTOIn dto) {
-        return ResponseEntity.ok(incidentService.updateSeverity(id, dto.severity(), dto.reason(), dto.actorStaffId()));
+        return ResponseEntity.ok(incidentService.updateSeverity(id, dto.severity(), dto.reason(), currentUser.actorId(dto.actorStaffId())));
     }
 
     @PatchMapping("/{id}/status")
     public ResponseEntity<?> updateStatus(@PathVariable Long id,
                                           @RequestBody @Valid StatusUpdateDTOIn dto) {
-        return ResponseEntity.ok(incidentService.updateStatus(id, dto.status(), dto.actorStaffId()));
+        return ResponseEntity.ok(incidentService.updateStatus(id, dto.status(), currentUser.actorId(dto.actorStaffId())));
     }
 
     @PostMapping("/{id}/resolve")
     public ResponseEntity<?> resolve(@PathVariable Long id,
                                      @RequestBody(required = false) @Valid ResolveDTOIn dto) {
         return ResponseEntity.ok(dto == null
-                ? incidentService.resolve(id, null, null, null)
-                : incidentService.resolve(id, dto.resolutionNotes(), dto.actualSeverity(), dto.actorStaffId()));
+                ? incidentService.resolve(id, null, null, currentUser.actorId(null))
+                : incidentService.resolve(id, dto.resolutionNotes(), dto.actualSeverity(), currentUser.actorId(dto.actorStaffId())));
     }
 
     @PostMapping("/{id}/false-alarm")
     public ResponseEntity<?> falseAlarm(@PathVariable Long id,
                                         @RequestBody(required = false) @Valid ResolveDTOIn dto) {
         return ResponseEntity.ok(dto == null
-                ? incidentService.markFalseAlarm(id, null, null)
-                : incidentService.markFalseAlarm(id, dto.resolutionNotes(), dto.actorStaffId()));
+                ? incidentService.markFalseAlarm(id, null, currentUser.actorId(null))
+                : incidentService.markFalseAlarm(id, dto.resolutionNotes(), currentUser.actorId(dto.actorStaffId())));
     }
 
     @GetMapping("/{id}/activity")
     public ResponseEntity<?> activity(@PathVariable Long id) {
         return ResponseEntity.ok(activityLogService.getByIncident(id));
+    }
+
+    @GetMapping("/{id}/recommendations")
+    public ResponseEntity<?> recommendations(@PathVariable Long id) {
+        return ResponseEntity.ok(recommendationService.byIncident(id));
+    }
+
+    // preview of the nearest suitable staff, nothing is assigned
+    @GetMapping("/{id}/candidates")
+    public ResponseEntity<?> candidates(@PathVariable Long id) {
+        return ResponseEntity.ok(assignmentService.candidates(id));
+    }
+
+    @GetMapping("/{id}/tasks")
+    public ResponseEntity<?> tasks(@PathVariable Long id) {
+        return ResponseEntity.ok(taskService.byIncident(id));
     }
 }

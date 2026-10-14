@@ -1,0 +1,379 @@
+[
+  {
+    "offsetSeconds": 0,
+    "source": "RADIO",
+    "sourceReference": "CROWD-01",
+    "text": "ازدحام عند المسرح الرئيسي",
+    "language": "ar",
+    "x": 291.2,
+    "y": 282.5,
+    "zoneCode": "MP"
+  },
+  {
+    "offsetSeconds": 5,
+    "source": "CCTV",
+    "sourceReference": "CROWD-02",
+    "text": "Crowd building up near main stage",
+    "language": "en",
+    "x": 307.5,
+    "y": 278.6
+  },
+  {
+    "offsetSeconds": 10,
+    "source": "VISITOR_APP",
+    "sourceReference": "CROWD-03",
+    "text": "زحمة كبيرة قدام الحفل",
+    "language": "ar",
+    "x": 301.8,
+    "y": 293.3
+  },
+  {
+    "offsetSeconds": 16,
+    "source": "IOT_SENSOR",
+    "sourceReference": "CROWD-04",
+    "text": "Overcrowding detected in main plaza",
+    "language": "en",
+    "x": 277.9,
+    "y": 300.4,
+    "zoneCode": "MP"
+  },
+  {
+    "offsetSeconds": 20,
+    "source": "IOT_SENSOR",
+    "sourceReference": "ELEV-01",
+    "text": "Elevator B2 not working, fault E14",
+    "language": "en",
+    "x": 405.9,
+    "y": 201.2,
+    "zoneCode": "PB"
+  },
+  {
+    "offsetSeconds": 21,
+    "source": "RADIO",
+    "sourceReference": "CROWD-05",
+    "text": "ازدحام شديد في الساحة الرئيسية",
+    "language": "ar",
+    "x": 276.9,
+    "y": 296.7
+  },
+  {
+    "offsetSeconds": 27,
+    "source": "CCTV",
+    "sourceReference": "CROWD-06",
+    "text": "High crowd density at the ceremony area",
+    "language": "en",
+    "x": 278.5,
+    "y": 279.5
+  },
+  {
+    "offsetSeconds": 30,
+    "source": "RADIO",
+    "sourceReference": "ELEV-02",
+    "text": "المصعد في الجناح B متوقف",
+    "language": "ar",
+    "x": 410.4,
+    "y": 206.0
+  },
+  {
+    "offsetSeconds": 32,
+    "source": "VISITOR_APP",
+    "sourceReference": "CROWD-07",
+    "text": "اكتظاظ الزوار أمام المنصة",
+    "language": "ar",
+    "x": 296.2,
+    "y": 316.3,
+    "zoneCode": "MP"
+  },
+  {
+    "offsetSeconds": 35,
+    "source": "SERVICE_REQUEST",
+    "sourceReference": "SPILL-01",
+    "text": "انسكاب مشروب قرب منطقة الطعام",
+    "language": "ar",
+    "x": 151.0,
+    "y": 449.5,
+    "zoneCode": "SV"
+  },
+  {
+    "offsetSeconds": 37,
+    "source": "RADIO",
+    "sourceReference": "CROWD-08",
+    "text": "Crowd pushing near the barriers",
+    "language": "en",
+    "x": 281.2,
+    "y": 286.2
+  },
+  {
+    "offsetSeconds": 40,
+    "source": "VISITOR_APP",
+    "sourceReference": "ELEV-03",
+    "text": "Lift B2 stuck between floors",
+    "language": "en",
+    "x": 413.7,
+    "y": 196.6,
+    "zoneCode": "PB"
+  },
+  {
+    "offsetSeconds": 43,
+    "source": "CCTV",
+    "sourceReference": "CROWD-09",
+    "text": "تدافع خفيف عند مدخل الساحة",
+    "language": "ar",
+    "x": 306.4,
+    "y": 322.4
+  },
+  {
+    "offsetSeconds": 46,
+    "source": "VISITOR_APP",
+    "sourceReference": "SPILL-02",
+    "text": "Drink spill near the food court",
+    "language": "en",
+    "x": 154.1,
+    "y": 455.3
+  },
+  {
+    "offsetSeconds": 48,
+    "source": "VISITOR_APP",
+    "sourceReference": "CROWD-10",
+    "text": "Crowded walkway north of the plaza",
+    "language": "en",
+    "x": 303.9,
+    "y": 294.8,
+    "zoneCode": "MP"
+  },
+  {
+    "offsetSeconds": 50,
+    "source": "SERVICE_REQUEST",
+    "sourceReference": "ELEV-04",
+    "text": "مصعد الجناح B معطل",
+    "language": "ar",
+    "x": 417.7,
+    "y": 193.9
+  },
+  {
+    "offsetSeconds": 54,
+    "source": "IOT_SENSOR",
+    "sourceReference": "CROWD-11",
+    "text": "الزحام يزيد قرب الحفل",
+    "language": "ar",
+    "x": 323.8,
+    "y": 277.3
+  },
+  {
+    "offsetSeconds": 57,
+    "source": "CCTV",
+    "sourceReference": "SPILL-03",
+    "text": "انسكاب عصير على الأرض في منطقة المطاعم",
+    "language": "ar",
+    "x": 149.7,
+    "y": 452.0,
+    "zoneCode": "SV"
+  },
+  {
+    "offsetSeconds": 59,
+    "source": "RADIO",
+    "sourceReference": "CROWD-12",
+    "text": "Crowd density sensor threshold exceeded",
+    "language": "en",
+    "x": 317.9,
+    "y": 289.5
+  },
+  {
+    "offsetSeconds": 60,
+    "source": "IOT_SENSOR",
+    "sourceReference": "ELEV-05",
+    "text": "Wheelchair user cannot reach upper floor, elevator B2 down",
+    "language": "en",
+    "x": 408.7,
+    "y": 204.1,
+    "zoneCode": "PB"
+  },
+  {
+    "offsetSeconds": 64,
+    "source": "CCTV",
+    "sourceReference": "CROWD-13",
+    "text": "ازدحام عند بوابات الساحة",
+    "language": "ar",
+    "x": 282.2,
+    "y": 280.9,
+    "zoneCode": "MP"
+  },
+  {
+    "offsetSeconds": 68,
+    "source": "RADIO",
+    "sourceReference": "SPILL-04",
+    "text": "Spilled juice on floor near food stalls",
+    "language": "en",
+    "x": 144.7,
+    "y": 452.4
+  },
+  {
+    "offsetSeconds": 70,
+    "source": "VISITOR_APP",
+    "sourceReference": "CROWD-14",
+    "text": "Visitors report crowding at the stage",
+    "language": "en",
+    "x": 290.4,
+    "y": 315.8
+  },
+  {
+    "offsetSeconds": 70,
+    "source": "RADIO",
+    "sourceReference": "ELEV-06",
+    "text": "زائر على كرسي متحرك ينتظر عند المصعد المعطل",
+    "language": "ar",
+    "x": 404.4,
+    "y": 199.8
+  },
+  {
+    "offsetSeconds": 75,
+    "source": "RADIO",
+    "sourceReference": "CROWD-15",
+    "text": "زحمة عند شاشة العرض الكبيرة",
+    "language": "ar",
+    "x": 284.0,
+    "y": 304.1
+  },
+  {
+    "offsetSeconds": 79,
+    "source": "SERVICE_REQUEST",
+    "sourceReference": "SPILL-05",
+    "text": "Floor is dirty and slippery near the food court",
+    "language": "en",
+    "x": 151.8,
+    "y": 455.9,
+    "zoneCode": "SV"
+  },
+  {
+    "offsetSeconds": 80,
+    "source": "VISITOR_APP",
+    "sourceReference": "ELEV-07",
+    "text": "Elevator B2 doors not opening",
+    "language": "en",
+    "x": 402.6,
+    "y": 202.7,
+    "zoneCode": "PB"
+  },
+  {
+    "offsetSeconds": 81,
+    "source": "CCTV",
+    "sourceReference": "CROWD-16",
+    "text": "Crowd congestion near the big screen",
+    "language": "en",
+    "x": 306.9,
+    "y": 293.6,
+    "zoneCode": "MP"
+  },
+  {
+    "offsetSeconds": 86,
+    "source": "VISITOR_APP",
+    "sourceReference": "CROWD-17",
+    "text": "ازدحام حول منطقة التصوير",
+    "language": "ar",
+    "x": 302.4,
+    "y": 278.1
+  },
+  {
+    "offsetSeconds": 90,
+    "source": "SERVICE_REQUEST",
+    "sourceReference": "ELEV-08",
+    "text": "عطل في المصعد B2",
+    "language": "ar",
+    "x": 414.2,
+    "y": 201.2
+  },
+  {
+    "offsetSeconds": 90,
+    "source": "VISITOR_APP",
+    "sourceReference": "SPILL-06",
+    "text": "الأرضية تحتاج نظافة قرب المطاعم",
+    "language": "ar",
+    "x": 153.9,
+    "y": 447.4
+  },
+  {
+    "offsetSeconds": 91,
+    "source": "IOT_SENSOR",
+    "sourceReference": "CROWD-18",
+    "text": "Severe crowding by the stage barriers",
+    "language": "en",
+    "x": 278.0,
+    "y": 285.3
+  },
+  {
+    "offsetSeconds": 97,
+    "source": "RADIO",
+    "sourceReference": "CROWD-19",
+    "text": "الوضع زحمة جدا قرب المسرح",
+    "language": "ar",
+    "x": 309.0,
+    "y": 296.4,
+    "zoneCode": "MP"
+  },
+  {
+    "offsetSeconds": 100,
+    "source": "IOT_SENSOR",
+    "sourceReference": "ELEV-09",
+    "text": "Elevator sensor: B2 out of service",
+    "language": "en",
+    "x": 416.0,
+    "y": 197.0,
+    "zoneCode": "PB"
+  },
+  {
+    "offsetSeconds": 101,
+    "source": "CCTV",
+    "sourceReference": "SPILL-07",
+    "text": "Trash bin overflowing next to the spill area",
+    "language": "en",
+    "x": 148.6,
+    "y": 452.0,
+    "zoneCode": "SV"
+  },
+  {
+    "offsetSeconds": 102,
+    "source": "CCTV",
+    "sourceReference": "CROWD-20",
+    "text": "Overcrowded area around the photo spot",
+    "language": "en",
+    "x": 290.7,
+    "y": 304.3
+  },
+  {
+    "offsetSeconds": 108,
+    "source": "VISITOR_APP",
+    "sourceReference": "CROWD-21",
+    "text": "ازدحام في الممر الشمالي للساحة",
+    "language": "ar",
+    "x": 297.7,
+    "y": 290.0
+  },
+  {
+    "offsetSeconds": 110,
+    "source": "RADIO",
+    "sourceReference": "ELEV-10",
+    "text": "مصعد B2 لا يعمل",
+    "language": "ar",
+    "x": 413.1,
+    "y": 201.5
+  },
+  {
+    "offsetSeconds": 112,
+    "source": "RADIO",
+    "sourceReference": "SPILL-08",
+    "text": "انسكاب قهوة عند طاولات الطعام",
+    "language": "ar",
+    "x": 144.3,
+    "y": 449.5
+  },
+  {
+    "offsetSeconds": 113,
+    "source": "RADIO",
+    "sourceReference": "CROWD-22",
+    "text": "Crowd surge at the plaza entrance",
+    "language": "en",
+    "x": 314.7,
+    "y": 309.9,
+    "zoneCode": "MP"
+  }
+]

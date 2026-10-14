@@ -27,4 +27,12 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
 
     // merge candidates: same category, still open
     List<Incident> findByCategoryAndStatusNotIn(IncidentCategory category, Collection<IncidentStatus> statuses);
+
+    long countByStatusNotIn(Collection<IncidentStatus> statuses);
+
+    long countBySeverityAndStatusNotIn(Severity severity, Collection<IncidentStatus> statuses);
+
+    // is the asset still needed out of service by another open incident?
+    boolean existsByAccessibilityAssetIdAndStatusNotInAndIdNot(Long assetId, Collection<IncidentStatus> statuses,
+                                                                Long excludedIncidentId);
 }

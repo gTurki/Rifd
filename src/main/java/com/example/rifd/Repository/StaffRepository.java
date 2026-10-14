@@ -2,6 +2,9 @@ package com.example.rifd.Repository;
 
 import com.example.rifd.Entity.Staff;
 import com.example.rifd.Enum.*;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -18,4 +21,23 @@ public interface StaffRepository extends JpaRepository<Staff, Long> {
     // to get all staff, shift & distance filters will be in the service layer
     List<Staff> findByRoleAndStatusAndSpecialtyAndLevel(StaffRole role, StaffStatus status,
                                                         StaffSpecialty specialty, StaffLevel level);
+
+    List<Staff> findByRoleAndStatusAndSpecialty(StaffRole role, StaffStatus status, StaffSpecialty specialty);
+
+    @Query("""
+           SELECT s FROM Staff s
+           WHERE (:status IS NULL OR s.status = :status)
+             AND (:specialty IS NULL OR s.specialty = :specialty)
+             AND (:role IS NULL OR s.role = :role)
+           ORDER BY s.id
+           """)
+    List<Staff> search(@Param("status") StaffStatus status,
+                       @Param("specialty") StaffSpecialty specialty,
+                       @Param("role") StaffRole role);
+
+    // atomic claim: only succeeds if the staff member is still in the expected status (two operators,
+    // or the escalation job, can never take the same person). Returns 1 on success, 0 if someone was faster.
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Staff s SET s.status = :to, s.version = s.version + 1 WHERE s.id = :id AND s.status = :from")
+    int transitionStatus(@Param("id") Long id, @Param("from") StaffStatus from, @Param("to") StaffStatus to);
 }

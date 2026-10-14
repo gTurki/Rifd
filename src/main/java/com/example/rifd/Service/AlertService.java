@@ -41,6 +41,7 @@ public class AlertService {
     private final RuleBasedClassifier ruleBasedClassifier;
     private final ActivityLogService activityLogService;
     private final BroadcastService broadcastService;
+    private final DashboardService dashboardService;
     private final TransactionTemplate transactionTemplate;
 
     // merge/create runs one alert at a time so the same event never opens two incidents
@@ -49,7 +50,8 @@ public class AlertService {
     public AlertService(AlertRepository alertRepository, ZoneRepository zoneRepository,
                         IncidentService incidentService, MergeService mergeService, AiClient aiClient,
                         RuleBasedClassifier ruleBasedClassifier, ActivityLogService activityLogService,
-                        BroadcastService broadcastService, PlatformTransactionManager transactionManager) {
+                        BroadcastService broadcastService, DashboardService dashboardService,
+                        PlatformTransactionManager transactionManager) {
         this.alertRepository = alertRepository;
         this.zoneRepository = zoneRepository;
         this.incidentService = incidentService;
@@ -58,6 +60,7 @@ public class AlertService {
         this.ruleBasedClassifier = ruleBasedClassifier;
         this.activityLogService = activityLogService;
         this.broadcastService = broadcastService;
+        this.dashboardService = dashboardService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -80,6 +83,16 @@ public class AlertService {
         pipelineLock.lock();
         try {
             return transactionTemplate.execute(status -> process(alert.getId(), classification));
+        } finally {
+            pipelineLock.unlock();
+        }
+    }
+
+    // used by /simulation/reset: no alert is half-processed while the tables are being cleared
+    public void runExclusive(Runnable work) {
+        pipelineLock.lock();
+        try {
+            work.run();
         } finally {
             pipelineLock.unlock();
         }
@@ -143,7 +156,7 @@ public class AlertService {
 
         AlertDTOOut out = DTOMapper.toDTO(alert);
         broadcastService.send(BroadcastService.ALERTS, "ALERT_PROCESSED", out);
-        // TODO phase 8: broadcast /topic/stats from DashboardService
+        dashboardService.broadcastStats(); // /topic/stats, after commit
         return out;
     }
 

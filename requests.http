@@ -1,0 +1,92 @@
+### ========== Rifd — full demo walkthrough (IntelliJ HTTP client) ==========
+### security.enabled=false -> no token needed. Seed ids: staff 1 = operator1, 3 = supervisor1.
+
+### 0) Reset (safe to run any time)
+POST http://localhost:8080/api/v1/simulation/reset
+
+### 1) Start the 40-alert scenario (speed 2 = ~1 minute)
+POST http://localhost:8080/api/v1/simulation/start?speed=2
+
+### 1b) Progress
+GET http://localhost:8080/api/v1/simulation/status
+
+### 2) Stats -> totalAlerts 40, mergedAlerts 37, openIncidents 3, bySeverity HIGH 1 / MEDIUM 1 / LOW 1
+GET http://localhost:8080/api/v1/dashboard/stats
+
+### 3) Incidents (HIGH first)
+GET http://localhost:8080/api/v1/incidents
+
+### 4) Recommendation of the crowd incident (INC-0001 -> id 1)
+GET http://localhost:8080/api/v1/incidents/1/recommendations
+
+### 5) Preview who would go (2 certified crowd supervisors + 1 escort assistant)
+GET http://localhost:8080/api/v1/incidents/1/candidates
+
+### 6) Operator accepts -> automatic assignment (use the recommendation id from step 4)
+POST http://localhost:8080/api/v1/recommendations/1/accept
+Content-Type: application/json
+
+{ "actorStaffId": 1 }
+
+### 7) Tasks of the incident
+GET http://localhost:8080/api/v1/incidents/1/tasks
+
+### 8) Field staff accepts and starts walking (task id from step 7) -> staff moves on the map
+POST http://localhost:8080/api/v1/tasks/1/accept
+
+###
+PATCH http://localhost:8080/api/v1/tasks/1/status
+Content-Type: application/json
+
+{ "status": "EN_ROUTE" }
+
+### 9) A staff member rejects -> next nearest is assigned automatically
+POST http://localhost:8080/api/v1/tasks/2/reject
+Content-Type: application/json
+
+{ "reason": "Already handling a lost child at Pavilion A" }
+
+### 10) Accessibility: elevator out -> route DISRUPTED + alternative + bilingual message
+GET http://localhost:8080/api/v1/accessibility/assets
+
+###
+GET http://localhost:8080/api/v1/accessibility/routes
+
+### route 1 = Main Plaza -> Pavilion B (Elevator B2)
+GET http://localhost:8080/api/v1/accessibility/routes/1/alternative
+
+### 11) Notifications of the accessibility team
+GET http://localhost:8080/api/v1/notifications?specialty=ACCESSIBILITY&unread=true
+
+### 12) Activity log: AI / HUMAN / SYSTEM for each decision
+GET http://localhost:8080/api/v1/incidents/1/activity
+
+### 13) Close the elevator incident (id 2) -> asset OPERATIONAL, route ACTIVE, staff released
+POST http://localhost:8080/api/v1/incidents/2/resolve
+Content-Type: application/json
+
+{ "resolutionNotes": "Elevator restarted by technician", "actualSeverity": "MEDIUM", "actorStaffId": 1 }
+
+### 14) Manual assignment (operator picks a specific person)
+POST http://localhost:8080/api/v1/tasks
+Content-Type: application/json
+
+{ "incidentId": 3, "staffId": 25, "notes": "Bring the wet-floor sign", "actorStaffId": 1 }
+
+### 15) Plan B for the demo: break an asset by hand (supervisor)
+PATCH http://localhost:8080/api/v1/accessibility/assets/1/status
+Content-Type: application/json
+
+{ "status": "OUT_OF_SERVICE", "actorStaffId": 3 }
+
+### 16) Login (when security.enabled=true) -> use the token as: Authorization: Bearer <token>
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{ "username": "operator1", "password": "demo123" }
+
+### Staff / playbooks
+GET http://localhost:8080/api/v1/staff?role=FIELD&status=AVAILABLE
+
+###
+GET http://localhost:8080/api/v1/playbooks?active=true

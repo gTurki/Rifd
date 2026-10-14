@@ -28,4 +28,6 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
     // time of the latest alert in an incident (Incident has no lastAlertAt field)
     @Query("SELECT MAX(a.receivedAt) FROM Alert a WHERE a.incident.id = :incidentId")
     LocalDateTime findLastReceivedAt(@Param("incidentId") Long incidentId);
+
+    long countByStatus(AlertStatus status);
 }

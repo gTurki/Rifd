@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -72,6 +73,12 @@ public class ControllerAdvice {
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ApiResponse> handlerMethodValidationException(HandlerMethodValidationException exception) {
         return ResponseEntity.status(400).body(new ApiResponse("Request parameters are outside their allowed range."));
+    }
+
+    // two people changed the same task / staff member at the same moment (@Version)
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse> optimisticLockingFailureException(ObjectOptimisticLockingFailureException exception) {
+        return ResponseEntity.status(400).body(new ApiResponse("The record was changed by someone else, please refresh and retry."));
     }
 
     @ExceptionHandler(RuntimeException.class)

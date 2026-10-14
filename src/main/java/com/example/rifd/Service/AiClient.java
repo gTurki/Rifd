@@ -27,7 +27,27 @@ public class AiClient {
     public record MergeScoreResponse(Long bestIncidentId, Double score) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RecommendResponse(Long playbookId, String actionText, String reasoning, Double confidence) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RouteMessageResponse(String ar, String en) {
+    }
+
     // ---- requests ----
+    public record RecommendIncident(Long id, String title, String summary, String category, String severity) {
+    }
+
+    public record RecommendPlaybook(Long id, String title, String steps) {
+    }
+
+    public record RecommendRequest(RecommendIncident incident, List<RecommendPlaybook> playbooks) {
+    }
+
+    public record RouteMessageRequest(String brokenAsset, String fromZone, String toZone, String alternativeName) {
+    }
+
     public record ClassifyRequest(Long alertId, String text, String language, String source,
                                   Double x, Double y, String zoneCode, LocalDateTime receivedAt) {
     }
@@ -98,6 +118,36 @@ public class AiClient {
                     .body(MergeScoreResponse.class));
         } catch (Exception e) {
             log.warn("AI merge-score failed for alert #{}, using rules: {}", alert.alertId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    public Optional<RecommendResponse> recommend(RecommendIncident incident, List<RecommendPlaybook> playbooks) {
+        if (!enabled) return Optional.empty();
+        try {
+            return Optional.ofNullable(restClient.post()
+                    .uri("/recommend")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new RecommendRequest(incident, playbooks))
+                    .retrieve()
+                    .body(RecommendResponse.class));
+        } catch (Exception e) {
+            log.warn("AI recommend failed for incident #{}, using playbook: {}", incident.id(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    public Optional<RouteMessageResponse> routeMessage(RouteMessageRequest request) {
+        if (!enabled) return Optional.empty();
+        try {
+            return Optional.ofNullable(restClient.post()
+                    .uri("/route-message")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(RouteMessageResponse.class));
+        } catch (Exception e) {
+            log.warn("AI route-message failed, using template: {}", e.getMessage());
             return Optional.empty();
         }
     }

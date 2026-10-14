@@ -2,6 +2,8 @@ package com.example.rifd.Repository;
 
 import com.example.rifd.Entity.Task;
 import com.example.rifd.Enum.TaskStatus;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -28,4 +30,24 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     // to find tasks by incident and status to assign them to a staff member
     List<Task> findByIncidentIdAndStatus(Long incidentId, TaskStatus status);
+
+    List<Task> findByIncidentIdOrderByAssignedAtAsc(Long incidentId);
+
+    List<Task> findByStatusIn(Collection<TaskStatus> statuses);
+
+    List<Task> findByStaffIdAndStatusIn(Long staffId, Collection<TaskStatus> statuses);
+
+    boolean existsByStaffIdAndStatusIn(Long staffId, Collection<TaskStatus> statuses);
+
+    boolean existsByIncidentIdAndStaffIdAndStatusIn(Long incidentId, Long staffId, Collection<TaskStatus> statuses);
+
+    long countByIncidentIdAndStatusIn(Long incidentId, Collection<TaskStatus> statuses);
+
+    @Query("""
+           SELECT t FROM Task t
+           WHERE (:staffId IS NULL OR t.staff.id = :staffId)
+             AND (:status IS NULL OR t.status = :status)
+           ORDER BY t.assignedAt DESC
+           """)
+    List<Task> search(@Param("staffId") Long staffId, @Param("status") TaskStatus status);
 }

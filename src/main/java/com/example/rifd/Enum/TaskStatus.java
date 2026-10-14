@@ -6,5 +6,6 @@ public enum TaskStatus {
     EN_ROUTE,
     ON_SITE,
     DONE,
-    REJECTED
+    REJECTED,
+    CANCELLED   // the incident was closed while the task was still open (not the staff member's decision)
 }

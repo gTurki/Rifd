@@ -14,6 +14,7 @@ import com.example.rifd.Enum.EntityType;
 import com.example.rifd.Enum.IncidentCategory;
 import com.example.rifd.Enum.IncidentStatus;
 import com.example.rifd.Enum.Severity;
+import com.example.rifd.Events.IncidentAssetLinkedEvent;
 import com.example.rifd.Events.IncidentCreatedEvent;
 import com.example.rifd.Events.IncidentResolvedEvent;
 import com.example.rifd.Events.IncidentSeverityChangedEvent;
@@ -64,6 +65,7 @@ public class IncidentService {
     private final EventService eventService;
     private final AccessibilityService accessibilityService;
     private final ApplicationEventPublisher eventPublisher;
+    private final DashboardService dashboardService;
 
     @Value("${event.severity-boost-radius:100}")
     private double eventBoostRadius;
@@ -134,6 +136,9 @@ public class IncidentService {
         }
 
         eventPublisher.publishEvent(new IncidentCreatedEvent(id));
+        if (incident.getAccessibilityAsset() != null) {
+            eventPublisher.publishEvent(new IncidentAssetLinkedEvent(id, incident.getAccessibilityAsset().getId()));
+        }
         broadcastService.send(BroadcastService.INCIDENTS, "INCIDENT_CREATED", DTOMapper.toDTO(incident));
         return incident;
     }
@@ -154,6 +159,17 @@ public class IncidentService {
         activityLogService.log(EntityType.INCIDENT, id, id, ActionType.MERGED, decidedBy, null,
                 String.valueOf(previousCount), String.valueOf(count),
                 String.format(Locale.ROOT, "Alert #%d merged, score %.2f", alert.getId(), score));
+
+        // the first alert may have been too far from the asset; a later (closer) alert can still link it
+        if (incident.getAccessibilityAsset() == null) {
+            String assetNote = linkAccessibilityAsset(incident);
+            if (incident.getAccessibilityAsset() != null) {
+                activityLogService.log(EntityType.INCIDENT, id, id, ActionType.STATUS_CHANGED, ActorType.SYSTEM, null,
+                        "affectsAccessibility=false", "affectsAccessibility=true",
+                        "Accessibility impact detected on merge" + assetNote);
+                eventPublisher.publishEvent(new IncidentAssetLinkedEvent(id, incident.getAccessibilityAsset().getId()));
+            }
+        }
 
         Optional<Event> event = findBoostingEvent(incident);
         if (event.isPresent() && incident.getEvent() == null) {
@@ -218,12 +234,17 @@ public class IncidentService {
 
         eventPublisher.publishEvent(new IncidentSeverityChangedEvent(incidentId, oldSeverity, newSeverity));
         broadcastIncident(incident);
+        dashboardService.broadcastStats();
         return DTOMapper.toDTO(incident);
     }
 
     // backward / late transitions are ignored quietly; the response shows the actual status
     @Transactional
     public IncidentDTOOut updateStatus(Long incidentId, IncidentStatus newStatus, Long actorStaffId) {
+        // closing goes through the same path as /resolve and /false-alarm (actualSeverity, notes, 400 if closed)
+        if (newStatus == IncidentStatus.RESOLVED) return resolve(incidentId, null, null, actorStaffId);
+        if (newStatus == IncidentStatus.FALSE_ALARM) return markFalseAlarm(incidentId, null, actorStaffId);
+
         validateActor(actorStaffId);
         changeStatus(incidentId, newStatus, ActorType.HUMAN, actorStaffId);
         return DTOMapper.toDTO(getIncident(incidentId));
@@ -279,6 +300,7 @@ public class IncidentService {
         }
 
         broadcastIncident(incident);
+        if (isClosed(newStatus)) dashboardService.broadcastStats(); // open incidents changed
         return newStatus;
     }
 
@@ -299,7 +321,7 @@ public class IncidentService {
 
     // ---------------- helpers ----------------
 
-    private Incident getOpenIncident(Long incidentId) {
+    public Incident getOpenIncident(Long incidentId) {
         Incident incident = getIncident(incidentId);
         if (isClosed(incident.getStatus())) {
             throw new ApiException("Incident is already closed");
@@ -308,7 +330,7 @@ public class IncidentService {
     }
 
     // before Security: actorStaffId comes from the request and is optional
-    private void validateActor(Long actorStaffId) {
+    public void validateActor(Long actorStaffId) {
         if (actorStaffId != null && !staffRepository.existsById(actorStaffId)) {
             throw new ApiException("Staff not found");
         }

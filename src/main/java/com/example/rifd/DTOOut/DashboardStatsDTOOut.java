@@ -10,7 +10,9 @@ public record DashboardStatsDTOOut(
         long totalIncidents,
         long openIncidents,
         Map<Severity, Long> bySeverity,   // open incidents only, every level present (0 when none)
-        long aiDecisions,
-        long fallbackDecisions
+        long aiDecisions,          // classification by the AI
+        long fallbackDecisions,    // classification by the rules
+        long aiMerges,             // merges decided by the AI
+        long fallbackMerges        // merges decided by the rules
 ) {
 }

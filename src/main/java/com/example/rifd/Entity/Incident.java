@@ -57,4 +57,15 @@ public class Incident extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     private Severity actualSeverity;
+
+
+    // set by the AI when it is unsure (NEEDS_REVIEW): a new incident that may repeat another one
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "possible_duplicate_of_id")
+    private Incident possibleDuplicateOf;
+
+    private Double duplicateScore;
+
+    // copy of the other incident's code, so the DTO never has to load it
+    private String possibleDuplicateOfCode;
 }

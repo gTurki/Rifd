@@ -88,6 +88,19 @@ public class IncidentController {
     public ResponseEntity<?> reopen(@PathVariable Long id, @RequestBody @Valid RejectDTOIn dto) {
         return ResponseEntity.ok(incidentService.reopen(id, dto.reason(), currentUser.actorId(dto.actorStaffId())));
     }
+    // possible duplicate: "yes, merge it into the original" (alerts move, this incident closes)
+    @PostMapping("/{id}/confirm-duplicate")
+    public ResponseEntity<?> confirmDuplicate(@PathVariable Long id,
+                                              @RequestParam(required = false) Long actorStaffId) {
+        return ResponseEntity.ok(incidentService.confirmDuplicate(id, currentUser.actorId(actorStaffId)));
+    }
+
+    // possible duplicate: "no, it is a different incident" (only the flag is removed)
+    @PostMapping("/{id}/not-duplicate")
+    public ResponseEntity<?> notDuplicate(@PathVariable Long id,
+                                          @RequestParam(required = false) Long actorStaffId) {
+        return ResponseEntity.ok(incidentService.clearDuplicateFlag(id, currentUser.actorId(actorStaffId)));
+    }
 
     @GetMapping("/{id}/activity")
     public ResponseEntity<?> activity(@PathVariable Long id) {

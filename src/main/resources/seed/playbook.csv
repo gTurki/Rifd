@@ -1,0 +1,59 @@
+﻿title,category,minSeverity,steps,requiredSpecialty,requiredLevel,recommendedStaffCount,targetResponseMinutes,isActive
+إخلاء وإطفاء أولي,FIRE,HIGH,"1. تفعيل إنذار المنطقة
+2. إخلاء نطاق 50 متر
+3. فريق السلامة للموقع
+4. إبلاغ الدفاع المدني
+5. إغلاق التهوية",FIRE_SAFETY,CERTIFIED,4,3,true
+فحص مصدر دخان,FIRE,LOW,"1. معاينة المصدر
+2. تأكيد وجود حريق من عدمه
+3. توثيق بصورة",FIRE_SAFETY,ASSISTANT,1,8,true
+استجابة طبية عاجلة,MEDICAL,HIGH,"1. إرسال مسعف معتمد
+2. تأمين محيط المصاب
+3. تجهيز مسار الإخلاء
+4. إبلاغ الهلال الأحمر عند الحاجة",MEDICAL,CERTIFIED,2,4,true
+إسعافات أولية,MEDICAL,LOW,"1. مسعف مساعد للموقع
+2. إسعاف أولي
+3. توثيق الحالة",MEDICAL,ASSISTANT,1,10,true
+فض تدافع,CROWD,HIGH,"1. فتح مخارج إضافية
+2. إيقاف الدخول مؤقتاً
+3. توجيه الزوار لمسار بديل
+4. بث تنبيه صوتي",CROWD_MANAGEMENT,CERTIFIED,5,3,true
+تنظيم ازدحام,CROWD,LOW,"1. إضافة حواجز توجيه
+2. موظف تنظيم عند المدخل",CROWD_MANAGEMENT,ASSISTANT,2,12,true
+بلاغ مفقود حرج,LOST_PERSON,HIGH,"1. تعميم الأوصاف على كل الفرق
+2. إغلاق البوابات مؤقتاً
+3. مراجعة كاميرات آخر موقع
+4. مرافقة ذوي المفقود",SECURITY,CERTIFIED,3,5,true
+بحث عن مفقود,LOST_PERSON,LOW,"1. تعميم الأوصاف في المنطقة
+2. إعلان عبر مكبر الصوت
+3. نقطة تجمع المفقودين",VISITOR_SERVICES,ASSISTANT,2,10,true
+تدخل أمني عاجل,SECURITY,HIGH,"1. دورية أمنية للموقع
+2. عزل المنطقة
+3. توثيق الواقعة
+4. تصعيد للمشرف",SECURITY,CERTIFIED,3,3,true
+معاينة أمنية,SECURITY,LOW,"1. معاينة الموقع
+2. التحقق من البلاغ
+3. تقرير مختصر",SECURITY,ASSISTANT,1,10,true
+عطل حرج في المرافق,TECHNICAL_FAILURE,HIGH,"1. فريق صيانة فوري
+2. تأمين المنطقة
+3. تفعيل البديل إن وجد
+4. إخطار الزوار بالتحويلة",TECHNICAL,CERTIFIED,2,6,true
+صيانة اعتيادية,TECHNICAL_FAILURE,LOW,"1. تذكرة صيانة
+2. وضع لافتة تحذير",TECHNICAL,ASSISTANT,1,20,true
+انقطاع مسار إتاحة,ACCESSIBILITY,HIGH,"1. إخطار فريق الإتاحة فوراً
+2. تحديث المسار البديل في التطبيق
+3. مرافقة الزوار المتأثرين
+4. تحديث حالة الأصل",TECHNICAL,CERTIFIED,2,5,true
+ملاحظة إتاحة,ACCESSIBILITY,LOW,"1. توثيق الملاحظة
+2. جدولة الإصلاح
+3. تحديث خريطة الإتاحة",TECHNICAL,CERTIFIED,1,15,true
+خطر نظافة عاجل,CLEANLINESS,MEDIUM,"1. تأمين المنطقة بحواجز
+2. تنظيف فوري
+3. لافتة أرضية مبللة",VISITOR_SERVICES,ASSISTANT,2,8,true
+نظافة اعتيادية,CLEANLINESS,LOW,1. إضافة للجولة القادمة,VISITOR_SERVICES,ASSISTANT,1,25,true
+بلاغ عام عاجل,OTHER,HIGH,"1. تقييم ميداني
+2. تحويل للفريق المختص
+3. تصعيد للمشرف",VISITOR_SERVICES,CERTIFIED,1,8,true
+بلاغ عام,OTHER,LOW,"1. تسجيل البلاغ
+2. رد على الزائر
+3. متابعة عند الحاجة",VISITOR_SERVICES,ASSISTANT,1,20,true

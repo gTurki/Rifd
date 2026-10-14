@@ -26,7 +26,10 @@ public record IncidentDTOOut(
         String resolutionNotes,
         Severity actualSeverity,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        Long possibleDuplicateOfId,
+        String possibleDuplicateOfCode,
+        Double duplicateScore
 ) {
 }
 

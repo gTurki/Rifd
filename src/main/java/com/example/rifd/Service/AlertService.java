@@ -12,6 +12,7 @@ import com.example.rifd.Mapper.DTOMapper;
 import com.example.rifd.Repository.AlertRepository;
 import com.example.rifd.Repository.ZoneRepository;
 import com.example.rifd.Service.RuleBasedClassifier.Classification;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,10 +20,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import static org.springframework.util.StringUtils.hasText;
 
@@ -39,6 +43,15 @@ public class AlertService {
     private final BroadcastService broadcastService;
     private final DashboardService dashboardService;
     private final TransactionTemplate transactionTemplate;
+
+    // an alert of these categories is never merged by the AI into an incident of another category:
+    // it needs its own team (a vague OTHER / CLEANLINESS label inside a known incident still merges)
+    private static final Set<IncidentCategory> NEEDS_OWN_TEAM = EnumSet.of(
+            IncidentCategory.MEDICAL, IncidentCategory.FIRE, IncidentCategory.SECURITY, IncidentCategory.LOST_PERSON);
+
+    // below this the AI category/severity is not trusted (the rules classify); its merge decision is still used
+    @Value("${ai.min-confidence:0.5}")
+    private double minConfidence;
 
     // merge/create runs one alert at a time so the same event never opens two incidents
     private final ReentrantLock pipelineLock = new ReentrantLock(true);
@@ -78,13 +91,14 @@ public class AlertService {
         // 1) save raw alert as NEW + broadcast (live counter)
         Alert alert = transactionTemplate.execute(status -> saveNew(dto, reporter, reporterTrust));
 
-        // 2) classify: AI, or rules on failure/timeout
-        Classification classification = classify(alert);
+        // 2) AI: classification + merge decision in one call (outside any transaction and lock).
+        //    Rules on failure / timeout
+        Analysis analysis = analyze(alert);
 
         // 3) merge into an open incident or create a new one
         pipelineLock.lock();
         try {
-            return transactionTemplate.execute(status -> process(alert.getId(), classification));
+            return transactionTemplate.execute(status -> process(alert.getId(), analysis));
         } finally {
             pipelineLock.unlock();
         }
@@ -136,7 +150,10 @@ public class AlertService {
         return alert;
     }
 
-    private AlertDTOOut process(Long alertId, Classification c) {
+    private AlertDTOOut process(Long alertId, Analysis analysis) {
+        Classification c = analysis.classification();
+        AiDecision d = analysis.decision();
+
         Alert alert = alertRepository.findById(alertId)
                 .orElseThrow(() -> new ApiException("Alert not found"));
 
@@ -150,24 +167,54 @@ public class AlertService {
         alert.setStatus(AlertStatus.PROCESSED);
 
         Incident incident = null;
-        Optional<MergeService.Match> match = mergeService.findMatch(alert);
-        if (match.isPresent()) {
-            // lock + fresh state: the operator may have closed or changed it while we were scoring
-            Incident target = incidentService.getIncidentForUpdate(match.get().incident().getId());
+        Long possibleDuplicateOf = null;
+        String note = "";
+
+        if (d == null) {
+            // no usable AI merge decision -> rules
+            incident = mergeByRules(alert, Set.of());
+        } else if (AiClient.MERGED.equals(d.status())) {
+            // lock + fresh state: the operator may have closed or changed it while the AI was working
+            Incident target = incidentService.getIncidentForUpdate(d.incidentId());
             if (!IncidentService.isClosed(target.getStatus())) {
-                incident = incidentService.mergeAlert(target, alert, match.get().score(), match.get().decidedBy());
+                if (target.getCategory() == c.category() || !NEEDS_OWN_TEAM.contains(c.category())) {
+                    incident = incidentService.mergeAlert(target, alert, d.score(), ActorType.AI);
+                } else {
+                    // same place and time but an urgent other category (e.g. MEDICAL inside a CROWD incident):
+                    // merging would send the wrong team. New incident (its own playbook) + "possible duplicate" flag
+                    possibleDuplicateOf = target.getId();
+                    note = " | AI merge into " + target.getCode() + " refused: category " + c.category()
+                            + " differs from " + target.getCategory();
+                }
+            }
+        } else {
+            // PROCESSED / NEEDS_REVIEW: the AI saw no sure match. An incident opened AFTER the AI call
+            // (another alert at the same moment) was not shown to the model -> rules on those only
+            incident = mergeByRules(alert, d.sentIncidentIds());
+            if (incident == null && AiClient.NEEDS_REVIEW.equals(d.status())) {
+                possibleDuplicateOf = d.incidentId();
             }
         }
+
         if (incident == null) {
             incident = incidentService.createFromAlert(alert, c.summary(), c.decidedBy());
+            if (possibleDuplicateOf != null) {
+                Incident original = incidentService.getIncidentForUpdate(possibleDuplicateOf);
+                if (!IncidentService.isClosed(original.getStatus())) {
+                    incidentService.flagPossibleDuplicate(incident, original, d.score());
+                }
+            }
         }
         alertRepository.save(alert);
 
         // aiDecisions / fallbackDecisions in the stats are counted from this row's actorType
         activityLogService.log(EntityType.ALERT, alert.getId(), incident.getId(), ActionType.CREATED,
                 c.decidedBy(), null, null, c.category() + "/" + c.severity(),
-                String.format(Locale.ROOT, "Classified by %s (confidence %.2f)",
-                        c.decidedBy() == ActorType.AI ? "AI" : "rules", c.confidence()));
+                String.format(Locale.ROOT, "Classified by %s (confidence %.2f)%s%s%s",
+                        c.decidedBy() == ActorType.AI ? "AI" : "rules", c.confidence(),
+                        analysis.lowAiConfidence() == null ? "" : String.format(Locale.ROOT,
+                                " | AI confidence %.2f below %.2f: rules used", analysis.lowAiConfidence(), minConfidence),
+                        d == null ? "" : " | AI merge decision: " + d.status(), note));
 
         AlertDTOOut out = DTOMapper.toDTO(alert);
         broadcastService.send(BroadcastService.ALERTS, "ALERT_PROCESSED", out);
@@ -175,30 +222,87 @@ public class AlertService {
         return out;
     }
 
-    // ---------------- classification ----------------
-
-    private Classification classify(Alert alert) {
-        return aiClient.classify(alert)
-                .flatMap(this::fromAi)
-                .orElseGet(() -> ruleBasedClassifier.classify(alert.getRawText()));
+    private Incident mergeByRules(Alert alert, Set<Long> excludedIds) {
+        Optional<MergeService.Match> match = mergeService.findMatch(alert, excludedIds);
+        if (match.isEmpty()) return null;
+        Incident target = incidentService.getIncidentForUpdate(match.get().incident().getId());
+        if (IncidentService.isClosed(target.getStatus())) return null;
+        return incidentService.mergeAlert(target, alert, match.get().score(), match.get().decidedBy());
     }
 
-    private Optional<Classification> fromAi(AiClient.ClassifyResponse response) {
-        IncidentCategory category = parseEnum(IncidentCategory.class, response.category());
-        if (category == null) return Optional.empty(); // unusable -> rules
+    // ---------------- AI (classification + merge decision) ----------------
 
-        Severity severity = parseEnum(Severity.class, response.severity());
+    // decision == null -> merge by rules. sentIncidentIds = the open incidents the model compared with
+    private record AiDecision(String status, Long incidentId, Double score, Set<Long> sentIncidentIds) {
+    }
+
+    // lowAiConfidence = the model answered but was unsure of the category -> the rules classified the alert
+    private record Analysis(Classification classification, AiDecision decision, Double lowAiConfidence) {
+    }
+
+    private Analysis analyze(Alert saved) {
+        if (aiClient.isEnabled()) {
+            AiClient.ProcessAlertRequest request = transactionTemplate.execute(s -> buildAiRequest(saved.getId()));
+            if (request != null) {
+                Optional<Analysis> fromAi = aiClient.processAlert(request)
+                        .flatMap(r -> fromAi(r, request, saved.getRawText()));
+                if (fromAi.isPresent()) return fromAi.get();
+            }
+        }
+        return new Analysis(ruleBasedClassifier.classify(saved.getRawText()), null, null);
+    }
+
+    // null = cannot ask the model (it needs a position and a zone) -> rules
+    private AiClient.ProcessAlertRequest buildAiRequest(Long alertId) {
+        Alert alert = alertRepository.findById(alertId).orElse(null);
+        if (alert == null || alert.getX() == null || alert.getY() == null
+                || alert.getZone() == null || alert.getReceivedAt() == null) {
+            return null;
+        }
+        AiClient.AlertIn in = new AiClient.AlertIn(alert.getId(), alert.getRawText(), alert.getX(), alert.getY(),
+                alert.getZone().getCode(), alert.getReceivedAt());
+        return new AiClient.ProcessAlertRequest(in, mergeService.openIncidentsForAi(alert));
+    }
+
+    private Optional<Analysis> fromAi(AiClient.ProcessAlertResponse response, AiClient.ProcessAlertRequest request,
+                                      String rawText) {
+        IncidentCategory category = parseEnum(IncidentCategory.class, response.aiCategory());
+        if (category == null) return Optional.empty(); // unusable -> rules for everything
+
+        Severity severity = parseEnum(Severity.class, response.aiSeverity());
         if (severity == null) {
             severity = (category == IncidentCategory.FIRE || category == IncidentCategory.MEDICAL)
                     ? Severity.HIGH
                     : RuleBasedClassifier.defaultSeverity(category);
         }
 
-        double confidence = response.confidence() == null
+        double confidence = response.aiConfidence() == null
                 ? RuleBasedClassifier.FALLBACK_CONFIDENCE
-                : Math.max(0, Math.min(1, response.confidence()));
+                : Math.max(0, Math.min(1, response.aiConfidence()));
+        Classification classification = new Classification(category, severity, confidence, null, ActorType.AI);
 
-        return Optional.of(new Classification(category, severity, confidence, response.summary(), ActorType.AI));
+        Set<Long> sent = request.openIncidents().stream()
+                .map(AiClient.OpenIncident::incidentId)
+                .collect(Collectors.toSet());
+        String status = response.status() == null ? "" : response.status().trim().toUpperCase(Locale.ROOT);
+        Double score = response.mergeScore() == null ? null : Math.round(response.mergeScore() * 100) / 100.0;
+
+        AiDecision decision = switch (status) {
+            // an id we did not send = unusable -> rules decide the merge
+            case AiClient.MERGED -> sent.contains(response.incident())
+                    ? new AiDecision(AiClient.MERGED, response.incident(), score == null ? 0.0 : score, sent)
+                    : null;
+            case AiClient.NEEDS_REVIEW -> sent.contains(response.suggestedIncident())
+                    ? new AiDecision(AiClient.NEEDS_REVIEW, response.suggestedIncident(), score, sent)
+                    : new AiDecision(AiClient.PROCESSED, null, null, sent);
+            case AiClient.PROCESSED -> new AiDecision(AiClient.PROCESSED, null, null, sent);
+            default -> null;
+        };
+        // unsure model (below ai.min-confidence): the rules classify, the AI merge decision is kept
+        if (confidence < minConfidence) {
+            return Optional.of(new Analysis(ruleBasedClassifier.classify(rawText), decision, confidence));
+        }
+        return Optional.of(new Analysis(classification, decision, null));
     }
 
     @Transactional(readOnly = true)

@@ -3,6 +3,7 @@ package com.example.rifd.Service;
 import com.example.rifd.Entity.Alert;
 import com.example.rifd.Entity.Incident;
 import com.example.rifd.Enum.ActorType;
+import com.example.rifd.Enum.AlertStatus;
 import com.example.rifd.Enum.IncidentStatus;
 import com.example.rifd.Repository.AlertRepository;
 import com.example.rifd.Repository.IncidentRepository;
@@ -33,9 +34,12 @@ public class MergeService {
 
     private static final List<IncidentStatus> CLOSED = List.of(IncidentStatus.RESOLVED, IncidentStatus.FALSE_ALARM);
 
+    // limits for the request sent to the AI with each alert
+    private static final int MAX_AI_INCIDENTS = 10;
+    private static final int MAX_AI_TEXTS = 10;
+
     private final IncidentRepository incidentRepository;
     private final AlertRepository alertRepository;
-    private final AiClient aiClient;
 
     @Value("${merge.threshold:0.6}")
     private double threshold;
@@ -51,22 +55,59 @@ public class MergeService {
     @Value("${merge.fallback-always-merge:true}")
     private boolean fallbackAlwaysMerge;
 
-    // expects alert.aiCategory to be set already
+    // rule-based merge (AI failed, or an incident opened after the AI call). expects alert.aiCategory to be set
     public Optional<Match> findMatch(Alert alert) {
+        return findMatch(alert, Set.of());
+    }
+
+    // excludedIds = incidents the AI already saw and decided about
+    public Optional<Match> findMatch(Alert alert, Set<Long> excludedIds) {
         if (alert.getAiCategory() == null) return Optional.empty();
 
-        List<Candidate> candidates = findCandidates(alert);
+        List<Candidate> candidates = findCandidates(alert).stream()
+                .filter(c -> !excludedIds.contains(c.incident().getId()))
+                .toList();
         if (candidates.isEmpty()) return Optional.empty();
-
-        Optional<AiClient.MergeScoreResponse> ai = aiClient.mergeScore(toAiAlert(alert),
-                candidates.stream().map(this::toAiCandidate).toList());
-
-        if (ai.isPresent()) {
-            Optional<Match> fromAi = fromAi(ai.get(), candidates);
-            if (fromAi != null) return fromAi;
-            // AI answer unusable -> rules
-        }
         return fallback(alert, candidates);
+    }
+
+    // open incidents sent to the AI with the alert: any category (the model classifies the alert itself),
+    // within merge.max-distance and the time window, nearest first. Must run inside a transaction (lazy zone).
+    public List<AiClient.OpenIncident> openIncidentsForAi(Alert alert) {
+        if (alert.getX() == null || alert.getY() == null || alert.getReceivedAt() == null) return List.of();
+        List<AiClient.OpenIncident> result = new ArrayList<>();
+
+        List<Incident> open = incidentRepository.findAll().stream()
+                .filter(i -> !CLOSED.contains(i.getStatus()))
+                .filter(i -> i.getAlertCount() != null && i.getAlertCount() > 0)
+                .filter(i -> i.getX() != null && i.getY() != null && i.getZone() != null && i.getCategory() != null)
+                .sorted(Comparator.comparingDouble(i -> AccessibilityService.distance(alert.getX(), alert.getY(), i.getX(), i.getY())))
+                .toList();
+
+        for (Incident incident : open) {
+            if (result.size() >= MAX_AI_INCIDENTS) break;
+            double distance = AccessibilityService.distance(alert.getX(), alert.getY(), incident.getX(), incident.getY());
+            if (distance > maxDistance) break; // sorted: the rest is farther
+
+            List<Alert> alerts = alertRepository.findByIncidentIdOrderByReceivedAtAsc(incident.getId()).stream()
+                    .filter(a -> a.getStatus() != AlertStatus.DISMISSED)
+                    .toList();
+            if (alerts.isEmpty()) continue;
+
+            LocalDateTime last = alerts.get(alerts.size() - 1).getReceivedAt();
+            if (last == null) continue;
+            double minutes = Math.abs(Duration.between(last, alert.getReceivedAt()).toMillis()) / 60000.0;
+            if (minutes > timeWindowMinutes) continue;
+
+            // the latest texts are enough to compare with
+            List<String> texts = alerts.subList(Math.max(0, alerts.size() - MAX_AI_TEXTS), alerts.size()).stream()
+                    .map(Alert::getRawText)
+                    .toList();
+
+            result.add(new AiClient.OpenIncident(incident.getId(), texts, incident.getX(), incident.getY(),
+                    incident.getZone().getCode(), incident.getCategory().name(), last));
+        }
+        return result;
     }
 
     private List<Candidate> findCandidates(Alert alert) {
@@ -87,22 +128,6 @@ public class MergeService {
             result.add(new Candidate(incident, distance, minutes, last));
         }
         return result;
-    }
-
-    // null = AI response unusable; empty = AI decided "new incident"
-    private Optional<Match> fromAi(AiClient.MergeScoreResponse response, List<Candidate> candidates) {
-        if (response.score() == null) return null;
-        if (response.bestIncidentId() == null) return Optional.empty();
-
-        Optional<Candidate> best = candidates.stream()
-                .filter(c -> c.incident().getId().equals(response.bestIncidentId()))
-                .findFirst();
-        if (best.isEmpty()) return null;
-
-        double score = round(response.score());
-        return score >= threshold
-                ? Optional.of(new Match(best.get().incident(), score, ActorType.AI))
-                : Optional.empty();
     }
 
     private Optional<Match> fallback(Alert alert, List<Candidate> candidates) {
@@ -135,17 +160,6 @@ public class MergeService {
             return 0.0; // no coordinates, same zone
         }
         return null;
-    }
-
-    private AiClient.MergeAlert toAiAlert(Alert alert) {
-        return new AiClient.MergeAlert(alert.getId(), alert.getRawText(), alert.getAiCategory().name(),
-                alert.getX(), alert.getY(), alert.getReceivedAt());
-    }
-
-    private AiClient.MergeCandidate toAiCandidate(Candidate c) {
-        Incident i = c.incident();
-        return new AiClient.MergeCandidate(i.getId(), i.getTitle(), i.getSummary(),
-                i.getCategory() == null ? null : i.getCategory().name(), i.getX(), i.getY(), c.lastAlertAt());
     }
 
     private static Set<String> words(String text) {

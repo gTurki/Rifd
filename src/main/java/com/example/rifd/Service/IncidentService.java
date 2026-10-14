@@ -342,6 +342,110 @@ public class IncidentService {
         dashboardService.broadcastStats();
         return DTOMapper.toDTO(incident);
     }
+    // ---------------- possible duplicate (AI said NEEDS_REVIEW) ----------------
+
+    // the pipeline created a new incident but the AI was unsure: flag it for the operator
+    @Transactional
+    public void flagPossibleDuplicate(Incident incident, Incident original, Double score) {
+        incident.setPossibleDuplicateOf(original);
+        incident.setPossibleDuplicateOfCode(original.getCode());
+        incident.setDuplicateScore(score);
+        incidentRepository.save(incident);
+
+        activityLogService.log(EntityType.INCIDENT, incident.getId(), incident.getId(), ActionType.STATUS_CHANGED,
+                ActorType.AI, null, null, original.getCode(),
+                String.format(Locale.ROOT, "Possible duplicate of %s (score %.2f)",
+                        original.getCode(), score == null ? 0.0 : score));
+        broadcastIncident(incident);
+    }
+
+    // operator: "yes, it is the same incident". The alerts move to the original (so the Telegram reporters
+    // are credited there and NOT counted as false reports), and this incident is closed as RESOLVED.
+    @Transactional
+    public IncidentDTOOut confirmDuplicate(Long incidentId, Long actorStaffId) {
+        validateOperator(actorStaffId);
+        Incident duplicate = getOpenIncident(incidentId);
+        if (duplicate.getPossibleDuplicateOf() == null) {
+            throw new ApiException("Incident is not flagged as a possible duplicate");
+        }
+        Incident original = getIncidentForUpdate(duplicate.getPossibleDuplicateOf().getId());
+        if (isClosed(original.getStatus())) {
+            throw new ApiException(original.getCode() + " is already closed: reopen it first, or mark as not duplicate");
+        }
+        autoAcknowledge(duplicate, actorStaffId);
+
+        // move every alert (dismissed ones too, to keep the history together); only live ones are counted
+        int count = original.getAlertCount() == null ? 0 : original.getAlertCount();
+        int moved = 0;
+        for (Alert alert : alertRepository.findByIncidentIdOrderByReceivedAtAsc(incidentId)) {
+            alert.setIncident(original);
+            if (alert.getStatus() != AlertStatus.DISMISSED) {
+                alert.setStatus(AlertStatus.MERGED);
+                count++;
+                moved++;
+                updateAveragePosition(original, alert, count);
+            }
+            alertRepository.save(alert);
+        }
+        original.setAlertCount(count);
+        duplicate.setAlertCount(0);
+
+        // the original takes the higher severity (unless an operator set it by hand)
+        Severity oldSeverity = original.getSeverity();
+        Severity dupSeverity = duplicate.getSeverity();
+        boolean raised = dupSeverity != null
+                && (oldSeverity == null || dupSeverity.ordinal() > oldSeverity.ordinal())
+                && !activityLogService.hasHumanSeverityOverride(original.getId());
+        if (raised) original.setSeverity(dupSeverity);
+
+        // keep the asset out of service: the original now carries it
+        if (original.getAccessibilityAsset() == null && duplicate.getAccessibilityAsset() != null) {
+            original.setAccessibilityAsset(duplicate.getAccessibilityAsset());
+            original.setAffectsAccessibility(true);
+        }
+        incidentRepository.save(original);
+
+        Long oid = original.getId();
+        activityLogService.log(EntityType.INCIDENT, oid, oid, ActionType.MERGED, ActorType.HUMAN, actorStaffId,
+                null, String.valueOf(count),
+                "Duplicate " + duplicate.getCode() + " merged in by the operator: " + moved + " alert(s) moved");
+        if (raised) {
+            activityLogService.log(EntityType.INCIDENT, oid, oid, ActionType.SEVERITY_CHANGED, ActorType.SYSTEM, null,
+                    String.valueOf(oldSeverity), dupSeverity.name(),
+                    "Highest severity after merging " + duplicate.getCode());
+            eventPublisher.publishEvent(new IncidentSeverityChangedEvent(oid, oldSeverity, dupSeverity));
+        }
+
+        // close the duplicate (its tasks and recommendation are cancelled by the usual listeners)
+        duplicate.setResolutionNotes("Duplicate of " + original.getCode() + ": alerts moved there");
+        duplicate.setActualSeverity(duplicate.getSeverity());
+        incidentRepository.save(duplicate);
+        changeStatus(incidentId, IncidentStatus.RESOLVED, ActorType.HUMAN, actorStaffId);
+
+        broadcastIncident(original);
+        dashboardService.broadcastStats();
+        return DTOMapper.toDTO(original);
+    }
+
+    // operator: "no, it is a different incident" -> the flag is removed, nothing else changes
+    @Transactional
+    public IncidentDTOOut clearDuplicateFlag(Long incidentId, Long actorStaffId) {
+        validateOperator(actorStaffId);
+        Incident incident = getOpenIncident(incidentId);
+        if (incident.getPossibleDuplicateOf() == null) return DTOMapper.toDTO(incident); // idempotent
+
+        String code = incident.getPossibleDuplicateOfCode();
+        autoAcknowledge(incident, actorStaffId);
+        incident.setPossibleDuplicateOf(null);
+        incident.setPossibleDuplicateOfCode(null);
+        incident.setDuplicateScore(null);
+        incidentRepository.save(incident);
+
+        activityLogService.log(EntityType.INCIDENT, incidentId, incidentId, ActionType.STATUS_CHANGED,
+                ActorType.HUMAN, actorStaffId, code, null, "Operator: not a duplicate of " + code);
+        broadcastIncident(incident);
+        return DTOMapper.toDTO(incident);
+    }
 
     // ---------------- status ----------------
 

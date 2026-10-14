@@ -44,7 +44,9 @@ public class DashboardService {
                 incidentRepository.countByStatusNotIn(CLOSED),
                 bySeverity,
                 activityLogRepository.countByEntityTypeAndActionAndActorType(EntityType.ALERT, ActionType.CREATED, ActorType.AI),
-                activityLogRepository.countByEntityTypeAndActionAndActorType(EntityType.ALERT, ActionType.CREATED, ActorType.SYSTEM));
+                activityLogRepository.countByEntityTypeAndActionAndActorType(EntityType.ALERT, ActionType.CREATED, ActorType.SYSTEM),
+                activityLogRepository.countByEntityTypeAndActionAndActorType(EntityType.INCIDENT, ActionType.MERGED, ActorType.AI),
+                activityLogRepository.countByEntityTypeAndActionAndActorType(EntityType.INCIDENT, ActionType.MERGED, ActorType.SYSTEM));
     }
 
     // called inside the caller's transaction: counts include its own changes, the message leaves after commit

@@ -29,6 +29,11 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.core.io.ClassPathResource;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -162,6 +167,8 @@ public class DataSeeder implements CommandLineRunner {
         field("C-201", "Rakan Alanazi", CROWD_MANAGEMENT, ASSISTANT, "MP", hash);
         field("C-202", "Yazeed Alsubaie", CROWD_MANAGEMENT, ASSISTANT, "G3", hash);
         field("C-203", "Hamad Almutairi", CROWD_MANAGEMENT, ASSISTANT, "PC", hash);
+        field("C-104", "Sultan Alqahtani", CROWD_MANAGEMENT, CERTIFIED, "G1", hash);
+        field("C-105", "Meshal Alotaibi", CROWD_MANAGEMENT, CERTIFIED, "PB", hash);
         // medical
         field("M-101", "Dr. Reem Alghamdi", MEDICAL, CERTIFIED, "PC", hash);
         field("M-102", "Khalid Alshammari", MEDICAL, CERTIFIED, "SV", hash);
@@ -170,9 +177,13 @@ public class DataSeeder implements CommandLineRunner {
         field("S-101", "Omar Alrashid", SECURITY, CERTIFIED, "G1", hash);
         field("S-102", "Nasser Albaqami", SECURITY, CERTIFIED, "PD", hash);
         field("S-201", "Bandar Alenezi", SECURITY, ASSISTANT, "G3", hash);
+        field("S-103", "Hatem Aljuhani", SECURITY, CERTIFIED, "MP", hash);
         // fire safety
         field("F-101", "Mansour Alharthi", FIRE_SAFETY, CERTIFIED, "TH", hash);
         field("F-201", "Waleed Alsahli", FIRE_SAFETY, ASSISTANT, "PB", hash);
+        field("F-102", "Adel Alshahrani", FIRE_SAFETY, CERTIFIED, "G1", hash);
+        field("F-103", "Saleh Albalawi", FIRE_SAFETY, CERTIFIED, "PD", hash);
+        field("F-104", "Mohammed Alasmari", FIRE_SAFETY, CERTIFIED, "MP", hash);
         // accessibility team
         field("A-101", "Lama Alsaud", ACCESSIBILITY, CERTIFIED, "PB", hash);
         field("A-201", "Hessa Alamri", ACCESSIBILITY, ASSISTANT, "MP", hash);
@@ -216,48 +227,81 @@ public class DataSeeder implements CommandLineRunner {
 
     // ---------------- playbooks ----------------
 
+    // loaded from resources/seed/playbook.csv (UTF-8 with BOM, quoted multi-line steps)
     private void seedPlaybooks() {
-        playbook("Crowd monitoring", IncidentCategory.CROWD, Severity.LOW, CROWD_MANAGEMENT, CERTIFIED, 1, 10,
-                "1) Send a crowd supervisor to assess density. 2) Open overflow lanes. 3) Report every 5 minutes.");
-        playbook("Crowd crush prevention", IncidentCategory.CROWD, Severity.HIGH, CROWD_MANAGEMENT, CERTIFIED, 2, 3,
-                "1) Stop inflow to the area and open emergency exits. 2) Two certified crowd supervisors on site, assistant escort. "
-                        + "3) Broadcast calm-down message on screens. 4) Coordinate with medical standby.");
-        playbook("First aid response", IncidentCategory.MEDICAL, Severity.LOW, MEDICAL, CERTIFIED, 1, 5,
-                "1) Nearest certified paramedic to the patient. 2) Assess vital signs. 3) Call ambulance if needed.");
-        playbook("Medical emergency", IncidentCategory.MEDICAL, Severity.HIGH, MEDICAL, CERTIFIED, 2, 3,
-                "1) Two certified paramedics with AED. 2) Clear a path for the ambulance. 3) Notify the nearest clinic.");
-        playbook("Fire / smoke response", IncidentCategory.FIRE, Severity.LOW, FIRE_SAFETY, CERTIFIED, 2, 3,
-                "1) Fire safety team on site with extinguishers. 2) Evacuate the affected area. 3) Call civil defense if not contained.");
-        playbook("Security check", IncidentCategory.SECURITY, Severity.LOW, SECURITY, CERTIFIED, 1, 5,
-                "1) Security officer to the location. 2) Separate the parties / secure the item. 3) Report to the supervisor.");
-        playbook("Security threat", IncidentCategory.SECURITY, Severity.HIGH, SECURITY, CERTIFIED, 2, 3,
-                "1) Two security officers. 2) Cordon the area. 3) Escalate to police liaison.");
-        playbook("Technical failure", IncidentCategory.TECHNICAL_FAILURE, Severity.LOW, TECHNICAL, CERTIFIED, 1, 15,
-                "1) Technician to diagnose. 2) Isolate the faulty equipment. 3) Estimate the restore time.");
-        playbook("Accessibility asset outage", IncidentCategory.ACCESSIBILITY, Severity.LOW, TECHNICAL, CERTIFIED, 1, 10,
-                "1) Technician to the elevator/ramp. 2) Accessibility team informed automatically and visitors re-routed. "
-                        + "3) Station an accessibility assistant at the asset until it is back.");
-        playbook("Lost person", IncidentCategory.LOST_PERSON, Severity.LOW, VISITOR_SERVICES, CERTIFIED, 1, 5,
-                "1) Take description and last-seen location. 2) Alert gates and help desks. 3) Check CCTV around the area.");
-        playbook("Cleaning request", IncidentCategory.CLEANLINESS, Severity.LOW, VISITOR_SERVICES, ASSISTANT, 1, 15,
-                "1) Place a wet-floor sign. 2) Clean the spill. 3) Confirm the area is safe.");
-        playbook("General response", IncidentCategory.OTHER, Severity.LOW, VISITOR_SERVICES, CERTIFIED, 1, 10,
-                "1) Send the nearest staff member to assess. 2) Report back to the control room.");
+        String content;
+        try (InputStream in = new ClassPathResource("seed/playbook.csv").getInputStream()) {
+            content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot read seed/playbook.csv", e);
+        }
+        if (content.startsWith("\uFEFF")) content = content.substring(1);
+
+        List<List<String>> rows = parseCsv(content);
+        List<String> header = rows.get(0);
+
+        for (int i = 1; i < rows.size(); i++) {
+            List<String> row = rows.get(i);
+            if (row.size() == 1 && row.get(0).isBlank()) continue;
+
+            Map<String, String> v = new HashMap<>();
+            for (int c = 0; c < header.size(); c++) {
+                v.put(header.get(c).trim(), c < row.size() ? row.get(c).trim() : "");
+            }
+
+            Playbook p = new Playbook();
+            p.setTitle(v.get("title"));
+            p.setCategory(IncidentCategory.valueOf(v.get("category")));
+            p.setMinSeverity(Severity.valueOf(v.get("minSeverity")));
+            p.setRequiredSpecialty(StaffSpecialty.valueOf(v.get("requiredSpecialty")));
+            p.setRequiredLevel(StaffLevel.valueOf(v.get("requiredLevel")));
+            p.setRecommendedStaffCount(Integer.parseInt(v.get("recommendedStaffCount")));
+            p.setTargetResponseMinutes(Integer.parseInt(v.get("targetResponseMinutes")));
+            p.setSteps(v.get("steps"));
+            p.setIsActive(!"false".equalsIgnoreCase(v.get("isActive")));
+            playbookRepository.save(p);
+        }
     }
 
-    private void playbook(String title, IncidentCategory category, Severity minSeverity, StaffSpecialty specialty,
-                          StaffLevel level, int count, int targetMinutes, String steps) {
-        Playbook p = new Playbook();
-        p.setTitle(title);
-        p.setCategory(category);
-        p.setMinSeverity(minSeverity);
-        p.setRequiredSpecialty(specialty);
-        p.setRequiredLevel(level);
-        p.setRecommendedStaffCount(count);
-        p.setTargetResponseMinutes(targetMinutes);
-        p.setSteps(steps);
-        p.setIsActive(true);
-        playbookRepository.save(p);
+    // minimal CSV parser: commas, "quoted" fields, "" escapes, line breaks inside quotes
+    private static List<List<String>> parseCsv(String text) {
+        List<List<String>> rows = new ArrayList<>();
+        List<String> row = new ArrayList<>();
+        StringBuilder field = new StringBuilder();
+        boolean quoted = false;
+
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (quoted) {
+                if (ch == '"') {
+                    if (i + 1 < text.length() && text.charAt(i + 1) == '"') {
+                        field.append('"');
+                        i++;
+                    } else {
+                        quoted = false;
+                    }
+                } else if (ch != '\r') {
+                    field.append(ch);
+                }
+            } else if (ch == '"') {
+                quoted = true;
+            } else if (ch == ',') {
+                row.add(field.toString());
+                field.setLength(0);
+            } else if (ch == '\n') {
+                row.add(field.toString());
+                field.setLength(0);
+                rows.add(row);
+                row = new ArrayList<>();
+            } else if (ch != '\r') {
+                field.append(ch);
+            }
+        }
+        if (field.length() > 0 || !row.isEmpty()) {
+            row.add(field.toString());
+            rows.add(row);
+        }
+        return rows;
     }
 
     // ---------------- accessibility assets ----------------

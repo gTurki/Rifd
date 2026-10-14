@@ -61,7 +61,9 @@ public final class DTOMapper {
                 idOf(incident.getZone()), idOf(incident.getEvent()), incident.getX(), incident.getY(),
                 incident.getAlertCount(), incident.getAffectsAccessibility(), idOf(incident.getAccessibilityAsset()),
                 incident.getAcknowledgedAt(), incident.getResolvedAt(), incident.getResolutionNotes(),
-                incident.getActualSeverity(), incident.getCreatedAt(), incident.getUpdatedAt());
+                incident.getActualSeverity(), incident.getCreatedAt(), incident.getUpdatedAt(),
+                idOf(incident.getPossibleDuplicateOf()), incident.getPossibleDuplicateOfCode(),
+                incident.getDuplicateScore());
     }
 
     public static IncidentDetailsDTOOut toDTO(Incident incident, List<Alert> alerts) {

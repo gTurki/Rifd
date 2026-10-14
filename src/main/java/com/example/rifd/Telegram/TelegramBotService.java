@@ -10,6 +10,8 @@ import com.example.rifd.Enum.ReporterTrust;
 import com.example.rifd.Repository.IncidentRepository;
 import com.example.rifd.Repository.ZoneRepository;
 import com.example.rifd.Service.AlertService;
+import com.example.rifd.Service.VisionClient;
+import com.example.rifd.Service.VisionClient.VisionResult;
 import com.example.rifd.Telegram.GeminiGatekeeper.ImageInput;
 import com.example.rifd.Telegram.GeminiGatekeeper.Verdict;
 import com.example.rifd.Telegram.GeminiGatekeeper.ZoneOption;
@@ -33,6 +35,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -41,11 +44,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 import static org.springframework.util.StringUtils.hasText;
@@ -68,6 +67,9 @@ public class TelegramBotService {
     private static final long MAX_IMAGE_BYTES = 10L * 1024 * 1024;
     // an album arrives as separate messages: wait this long to collect them
     private static final long ALBUM_WAIT_MS = 1500;
+    // AI 2 (fire/smoke on photos): never hold a photo report longer than this. No answer = no detection (not "safe")
+    private static final long VISION_MAX_WAIT_SECONDS = 20;
+    private static final String VISION_SOURCE = "VISITOR_APP";
     private static final int MAX_IMAGES = 3;
     private static final int PREVIEW_LENGTH = 500;
     private static final String ZONE_PREFIX = "z:";
@@ -170,12 +172,15 @@ public class TelegramBotService {
     private final IncidentRepository incidentRepository;
     private final com.example.rifd.Telegram.TelegramReporterService reporterService;
     private final TelegramRateLimiter rateLimiter;
+    private final VisionClient visionClient;
 
     private final Map<String, PendingReport> pending = new ConcurrentHashMap<>();
     // album messages being collected, key = chatId:mediaGroupId
     private final Map<String, List<Message>> albums = new ConcurrentHashMap<>();
     // a slow AI call for one message must not block polling or other chats
     private final ExecutorService workers = Executors.newFixedThreadPool(4);
+    // AI 2 calls run beside the Gemini description (own pool: a worker never waits on another worker)
+    private final ExecutorService visionPool = Executors.newFixedThreadPool(2);
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
 
     private volatile boolean running;
@@ -185,7 +190,8 @@ public class TelegramBotService {
                               @Value("${telegram.poll-timeout-seconds:30}") int pollTimeoutSeconds,
                               TelegramClient client, GeminiGatekeeper gatekeeper, AlertService alertService,
                               ZoneRepository zoneRepository, IncidentRepository incidentRepository,
-                              com.example.rifd.Telegram.TelegramReporterService reporterService, TelegramRateLimiter rateLimiter) {
+                              com.example.rifd.Telegram.TelegramReporterService reporterService, TelegramRateLimiter rateLimiter,
+                              VisionClient visionClient) {
         this.enabled = enabled;
         this.pollTimeoutSeconds = pollTimeoutSeconds;
         this.client = client;
@@ -195,6 +201,7 @@ public class TelegramBotService {
         this.incidentRepository = incidentRepository;
         this.reporterService = reporterService;
         this.rateLimiter = rateLimiter;
+        this.visionClient = visionClient;
     }
 
     // ---------------- lifecycle ----------------
@@ -222,6 +229,7 @@ public class TelegramBotService {
         running = false;
         if (pollThread != null) pollThread.interrupt();
         timer.shutdownNow();
+        visionPool.shutdownNow();
         workers.shutdown();
         try {
             workers.awaitTermination(5, TimeUnit.SECONDS);
@@ -507,7 +515,8 @@ public class TelegramBotService {
         Long placeholderId = client.sendMessage(chatId, refs.size() > 1 ? ANALYZING_MANY : ANALYZING,
                 first.messageId(), null);
 
-        // call 1: download + describe (a photo that fails to download is skipped, the rest still count)
+        // call 1: download, then describe (Gemini) and detect fire/smoke (AI 2) in parallel.
+        // A photo that fails to download is skipped, the rest still count
         List<ImageInput> images = new ArrayList<>();
         for (ImageRef ref : refs) {
             TgDownload file = client.downloadFile(ref.fileId(), MAX_IMAGE_BYTES);
@@ -515,23 +524,53 @@ public class TelegramBotService {
                 images.add(new ImageInput(file.bytes(), hasText(ref.mimeType()) ? ref.mimeType() : "image/jpeg"));
             }
         }
+
+        CompletableFuture<Optional<VisionResult>> vision = detect(images, first);
         Optional<String> description = images.isEmpty() ? Optional.empty() : gatekeeper.describeImages(images);
+        String detection = vision
+                .completeOnTimeout(Optional.empty(), VISION_MAX_WAIT_SECONDS, TimeUnit.SECONDS)
+                .join()
+                .filter(VisionResult::hasFindings)
+                .map(VisionResult::summaryAr)
+                .orElse(null);
+        String detectionLine = detection == null ? "" : "\n\n🔥 " + detection;
 
         if (description.isEmpty()) {
-            log.info("Telegram tg:{}:{} photo not analyzed: fallback", chatId, first.messageId());
-            String text = hasText(caption) ? IMAGE_FALLBACK_TEXT + "\n" + CAPTION_LABEL + caption : IMAGE_FALLBACK_TEXT;
+            log.info("Telegram tg:{}:{} photo not analyzed: fallback{}", chatId, first.messageId(),
+                    detection == null ? "" : " (with detection)");
+            String text = IMAGE_FALLBACK_TEXT
+                    + (detection == null ? "" : "\n" + detection)
+                    + (hasText(caption) ? "\n" + CAPTION_LABEL + caption : "");
             mediaFallback(first, text, attachmentUrl,
-                    hasText(caption) ? IMAGE_FAILED_WITH_CAPTION : IMAGE_FAILED, placeholderId, reporter);
+                    (hasText(caption) ? IMAGE_FAILED_WITH_CAPTION : IMAGE_FAILED) + detectionLine,
+                    placeholderId, reporter);
             return;
         }
 
         String seen = description.get();
         log.info("Telegram tg:{}:{} photo description: '{}'", chatId, first.messageId(), seen);
-        showOrSend(chatId, placeholderId, SEEN + "«" + preview(seen) + "»", first.messageId());
+        showOrSend(chatId, placeholderId, SEEN + "«" + preview(seen) + "»" + detectionLine, first.messageId());
 
-        // call 2: the gatekeeper sees the description and the caption together
+        // call 2: the gatekeeper sees the description and the caption together; the detection is added after it
         String combined = IMAGE_LABEL + seen + (hasText(caption) ? "\n" + CAPTION_LABEL + caption : "");
-        processReport(first, truncate(combined), attachmentUrl, reporter);
+        processReport(first, truncate(combined), attachmentUrl, reporter, detection);
+    }
+
+    // AI 2 in the background. Disabled / no photos / any failure -> empty (never "safe")
+    private CompletableFuture<Optional<VisionClient.VisionResult>> detect(List<ImageInput> images, Message first) {
+        if (!visionClient.isEnabled() || images.isEmpty()) return CompletableFuture.completedFuture(Optional.empty());
+        List<VisionClient.ImageData> data = images.stream()
+                .map(i -> new VisionClient.ImageData(i.bytes(), i.mimeType()))
+                .toList();
+        String requestId = "tg-" + first.chat().id() + "-" + first.messageId();
+        try {
+            return CompletableFuture
+                    .supplyAsync(() -> visionClient.analyzeAll(data, requestId, VISION_SOURCE,
+                            Instant.ofEpochSecond(first.date())), visionPool)
+                    .exceptionally(e -> Optional.empty());
+        } catch (RejectedExecutionException e) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
     }
 
     // ---------------- shared ----------------
@@ -551,13 +590,20 @@ public class TelegramBotService {
 
     // shared by typed text, voice transcripts and photo descriptions: gatekeeper -> zone -> pipeline
     private void processReport(Message message, String original, String attachmentUrl, TelegramReporter reporter) {
+        processReport(message, original, attachmentUrl, reporter, null);
+    }
+
+    // evidence = AI 2 detection line (photos only). It is added after the gatekeeper so it always reaches the alert,
+    // and a photo with detected flame / smoke is never dropped as "not a report"
+    private void processReport(Message message, String original, String attachmentUrl, TelegramReporter reporter,
+                               String evidence) {
         long chatId = message.chat().id();
         client.sendChatAction(chatId, "typing");
 
         List<ZoneOption> zones = loadZones();
         Optional<Verdict> verdict = gatekeeper.check(original, zones);
 
-        if (verdict.isPresent() && !verdict.get().isReport()
+        if (evidence == null && verdict.isPresent() && !verdict.get().isReport()
                 && verdict.get().confidence() >= NOT_REPORT_MIN_CONFIDENCE) {
             // in groups people chat a lot: stay quiet there
             if (message.chat().isPrivate()) client.sendMessage(chatId, NOT_A_REPORT, message.messageId(), null);
@@ -569,9 +615,9 @@ public class TelegramBotService {
         if (!reportText.equals(original)) {
             log.info("Telegram tg:{}:{} cleaned: '{}' -> '{}'", chatId, message.messageId(), original, reportText);
         }
+        if (evidence != null) reportText = truncate(reportText + "\n" + evidence);
 
         PendingReport report = newReport(message, reportText, attachmentUrl, reporter);
-
         if (zoneCode != null || zones.isEmpty()) submit(report, zoneCode);
         else askForZone(report, zones);
     }

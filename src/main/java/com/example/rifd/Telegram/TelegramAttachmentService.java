@@ -3,6 +3,7 @@ package com.example.rifd.Telegram;
 import com.example.rifd.Api.ApiException;
 import com.example.rifd.Entity.Alert;
 import com.example.rifd.Repository.AlertRepository;
+import com.example.rifd.Service.SimulationService;
 import com.example.rifd.Telegram.TelegramClient.TgDownload;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -11,8 +12,9 @@ import java.util.Locale;
 
 import static org.springframework.util.StringUtils.hasText;
 
-// serves Telegram attachments (voice now, images in stage 3) to the dashboard.
-// Fetched from Telegram on demand: nothing stored, the bot token never leaves the server
+// serves alert attachments to the dashboard:
+// - tg:<id>[,<id2>,<id3>] = Telegram voice / photos, fetched on demand (nothing stored, the token never leaves the server)
+// - scenario:<file>       = a camera frame of the fire scenario, from resources/scenario/images
 @Service
 @RequiredArgsConstructor
 public class TelegramAttachmentService {
@@ -26,7 +28,7 @@ public class TelegramAttachmentService {
     private final AlertRepository alertRepository;
     private final TelegramClient client;
 
-    // attachmentUrl = tg:<id> or tg:<id1>,<id2>,<id3> (album). index picks which one (0 = first)
+    // index picks which file of an album (0 = first)
     // no transaction on purpose: no DB connection held during the Telegram download
     public Attachment getForAlert(Long alertId, int index) {
         Alert alert = alertRepository.findById(alertId)
@@ -34,7 +36,16 @@ public class TelegramAttachmentService {
 
         String url = alert.getAttachmentUrl();
         if (!hasText(url)) throw new ApiException("Alert has no attachment");
-        if (!url.startsWith(PREFIX)) throw new ApiException("Attachment is not a Telegram file");
+
+        if (url.startsWith(SimulationService.IMAGE_PREFIX)) {
+            if (index != 0) throw new ApiException("Attachment index out of range");
+            String name = url.substring(SimulationService.IMAGE_PREFIX.length());
+            byte[] bytes = SimulationService.readImage(name);
+            if (bytes == null) throw new ApiException("Scenario image not found");
+            return new Attachment(bytes, SimulationService.imageType(name));
+        }
+
+        if (!url.startsWith(PREFIX)) throw new ApiException("Unknown attachment type");
         if (!client.isConfigured()) throw new ApiException("Telegram is not configured");
 
         String[] fileIds = url.substring(PREFIX.length()).split(",");

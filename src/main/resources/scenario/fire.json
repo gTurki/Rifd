@@ -1,0 +1,54 @@
+[
+  {
+    "offsetSeconds": 0,
+    "source": "CCTV",
+    "sourceReference": "CAM-G1-01",
+    "text": "كاميرا CAM-G1-01 - ساحة الانتظار عند البوابة 1",
+    "language": "ar",
+    "image": "neutral_1.jpg",
+    "x": 70.0,
+    "y": 312.0,
+    "zoneCode": "G1"
+  },
+  {
+    "offsetSeconds": 3,
+    "source": "CCTV",
+    "sourceReference": "CAM-G1-02",
+    "text": "كاميرا CAM-G1-02 - مدخل البوابة 1",
+    "language": "ar",
+    "image": "smoke_1.jpg",
+    "x": 85.0,
+    "y": 295.0,
+    "zoneCode": "G1"
+  },
+  {
+    "offsetSeconds": 8,
+    "source": "RADIO",
+    "sourceReference": "FIRE-01",
+    "text": "ريحة دخان قوية عند البوابة الغربية",
+    "language": "ar",
+    "x": 90.0,
+    "y": 300.0,
+    "zoneCode": "G1"
+  },
+  {
+    "offsetSeconds": 12,
+    "source": "CCTV",
+    "sourceReference": "CAM-G1-03",
+    "text": "كاميرا CAM-G1-03 - ممر البوابة 1",
+    "language": "ar",
+    "image": "fire_1.jpg",
+    "x": 80.0,
+    "y": 288.0,
+    "zoneCode": "G1"
+  },
+  {
+    "offsetSeconds": 16,
+    "source": "VISITOR_APP",
+    "sourceReference": "FIRE-02",
+    "text": "Smoke and flames near Gate 1 entrance",
+    "language": "en",
+    "x": 78.0,
+    "y": 305.0
+  }
+]

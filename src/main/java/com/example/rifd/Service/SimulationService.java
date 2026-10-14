@@ -17,6 +17,8 @@ import com.example.rifd.Repository.NotificationRepository;
 import com.example.rifd.Repository.RecommendationRepository;
 import com.example.rifd.Repository.StaffRepository;
 import com.example.rifd.Repository.TaskRepository;
+import com.example.rifd.Service.VisionClient.ImageData;
+import com.example.rifd.Service.VisionClient.VisionResult;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -33,29 +35,46 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.springframework.util.StringUtils.hasText;
 
 @Slf4j
 @Service
 public class SimulationService {
 
-    // one line of resources/scenario/demo.json (same fields as AlertDTOIn + offsetSeconds)
+    // one line of a scenario file (same fields as AlertDTOIn + offsetSeconds).
+    // image = a camera frame under resources/scenario/images: it is analyzed by AI 2 first,
+    // and only a fire/smoke detection becomes an alert (a smart camera stays silent otherwise)
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ScenarioAlert(int offsetSeconds, AlertSource source, String sourceReference, String text,
-                                String language, String attachmentUrl, Double x, Double y, String zoneCode) {
-        AlertDTOIn toDTO() {
+                                String language, String attachmentUrl, Double x, Double y, String zoneCode,
+                                String image) {
+        AlertDTOIn toDTO(String text, String attachmentUrl) {
             return new AlertDTOIn(source, sourceReference, text, language, attachmentUrl, x, y, zoneCode, null);
         }
     }
 
-    private static final String SCENARIO = "scenario/demo.json";
+    // attachmentUrl of a camera alert = scenario:<file name>, served by /alerts/{id}/attachment
+    public static final String IMAGE_PREFIX = "scenario:";
+    public static final String IMAGE_DIR = "scenario/images/";
+    private static final String VISION_SOURCE = "CCTV";
+
+    // ?scenario=demo (the 40 -> 3 story) or ?scenario=fire (smart cameras at Gate 1)
+    private static final Map<String, String> SCENARIOS = Map.of(
+            "demo", "scenario/demo.json",
+            "fire", "scenario/fire.json");
 
     private final AlertService alertService;
     private final AccessibilityService accessibilityService;
     private final DashboardService dashboardService;
     private final BroadcastService broadcastService;
+    private final VisionClient visionClient;
     private final NotificationRepository notificationRepository;
     private final TaskRepository taskRepository;
     private final RecommendationRepository recommendationRepository;
@@ -82,6 +101,7 @@ public class SimulationService {
 
     public SimulationService(AlertService alertService, AccessibilityService accessibilityService,
                              DashboardService dashboardService, BroadcastService broadcastService,
+                             VisionClient visionClient,
                              NotificationRepository notificationRepository, TaskRepository taskRepository,
                              RecommendationRepository recommendationRepository, ActivityLogRepository activityLogRepository,
                              AlertRepository alertRepository, IncidentRepository incidentRepository,
@@ -91,6 +111,7 @@ public class SimulationService {
         this.accessibilityService = accessibilityService;
         this.dashboardService = dashboardService;
         this.broadcastService = broadcastService;
+        this.visionClient = visionClient;
         this.notificationRepository = notificationRepository;
         this.taskRepository = taskRepository;
         this.recommendationRepository = recommendationRepository;
@@ -111,9 +132,11 @@ public class SimulationService {
         scheduler.shutdown();
     }
 
-    public synchronized SimulationStatusDTOOut start(double speed) {
+    public synchronized SimulationStatusDTOOut start(double speed, String scenario) {
         if (isRunning()) throw new ApiException("Simulation is already running");
-        List<ScenarioAlert> alerts = load();
+        String file = SCENARIOS.get(scenario == null ? "demo" : scenario.trim().toLowerCase(Locale.ROOT));
+        if (file == null) throw new ApiException("Unknown scenario, use one of: " + SCENARIOS.keySet());
+        List<ScenarioAlert> alerts = load(file);
 
         futures.clear();
         sent.set(0);
@@ -126,6 +149,7 @@ public class SimulationService {
             long delayMs = Math.round(Math.max(0, a.offsetSeconds()) * 1000 / speed);
             futures.add(scheduler.schedule(() -> send(a), start.plusMillis(delayMs)));
         }
+        log.info("Simulation '{}' started: {} items", file, alerts.size());
         broadcastService.send(BroadcastService.STATS, "SIMULATION_STARTED", status());
         return status();
     }
@@ -175,11 +199,35 @@ public class SimulationService {
         return new SimulationStatusDTOOut(isRunning(), total, sent.get(), speed);
     }
 
+    // ---------------- images (also used by the attachment endpoint) ----------------
+
+    // file name only: no folders, no "..", so nothing outside scenario/images can be read
+    public static boolean isSafeImageName(String name) {
+        return name != null && name.matches("[A-Za-z0-9_.-]{1,100}") && !name.contains("..");
+    }
+
+    public static byte[] readImage(String name) {
+        if (!isSafeImageName(name)) return null;
+        try (InputStream in = new ClassPathResource(IMAGE_DIR + name).getInputStream()) {
+            return in.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String imageType(String name) {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".webp")) return "image/webp";
+        return "image/jpeg";
+    }
+
     // ---------------- helpers ----------------
 
     private void send(ScenarioAlert a) {
         try {
-            alertService.ingest(a.toDTO());
+            if (hasText(a.image())) sendCamera(a);
+            else alertService.ingest(a.toDTO(a.text(), a.attachmentUrl()));
         } catch (Exception e) {
             log.error("Simulation alert '{}' failed", a.sourceReference(), e);
         } finally {
@@ -187,12 +235,34 @@ public class SimulationService {
         }
     }
 
+    // smart camera: AI 2 looks at the frame first. Detection -> alert (with the frame attached).
+    // Nothing detected, or AI 2 unavailable -> no alert (the human reports in the scenario still open the incident)
+    private void sendCamera(ScenarioAlert a) {
+        byte[] bytes = readImage(a.image());
+        if (bytes == null) {
+            log.warn("Simulation camera {}: image '{}' not found in resources/{}", a.sourceReference(), a.image(), IMAGE_DIR);
+            return;
+        }
+
+        Optional<VisionResult> result = visionClient.analyzeAll(
+                List.of(new ImageData(bytes, imageType(a.image()))),
+                "sim-" + a.sourceReference(), VISION_SOURCE, Instant.now());
+        String detection = result.filter(VisionResult::hasFindings).map(VisionResult::summaryAr).orElse(null);
+
+        if (detection == null) {
+            log.info("Simulation camera {}: {} -> no alert", a.sourceReference(),
+                    result.isEmpty() ? "vision unavailable" : "nothing detected");
+            return;
+        }
+        alertService.ingest(a.toDTO(a.text() + "\n" + detection, IMAGE_PREFIX + a.image()));
+    }
+
     private boolean isRunning() {
         return futures.stream().anyMatch(f -> !f.isDone());
     }
 
-    private List<ScenarioAlert> load() {
-        try (InputStream in = new ClassPathResource(SCENARIO).getInputStream()) {
+    private List<ScenarioAlert> load(String file) {
+        try (InputStream in = new ClassPathResource(file).getInputStream()) {
             List<ScenarioAlert> alerts = jsonMapper.readValue(in, new TypeReference<List<ScenarioAlert>>() {
             });
             if (alerts == null || alerts.isEmpty()) throw new ApiException("Scenario file is empty");
@@ -200,8 +270,8 @@ public class SimulationService {
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Cannot read {}", SCENARIO, e);
-            throw new ApiException("Cannot read the demo scenario");
+            log.error("Cannot read {}", file, e);
+            throw new ApiException("Cannot read the scenario " + file);
         }
     }
 

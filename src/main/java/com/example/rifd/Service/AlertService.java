@@ -189,8 +189,26 @@ public class AlertService {
             }
         } else {
             // PROCESSED / NEEDS_REVIEW: the AI saw no sure match. An incident opened AFTER the AI call
-            // (another alert at the same moment) was not shown to the model -> rules on those only
-            incident = mergeByRules(alert, d.sentIncidentIds());
+            // (another alert at the same moment) was not shown to the model -> rules on those only.
+            // Exception: the model said PROCESSED but did not understand the alert (confidence below
+            // ai.min-confidence, the rules classified it) -> its "new incident" is not trusted either:
+            // the rules check every open incident (same category, distance and time window)
+            // Also NEEDS_REVIEW (the model is unsure): the rules settle it. Same category + distance + time window
+            // = the same incident -> merge. No rules match (e.g. another category) -> new incident + duplicate flag
+            boolean unsureNew = analysis.lowAiConfidence() != null && AiClient.PROCESSED.equals(d.status());
+            boolean review = AiClient.NEEDS_REVIEW.equals(d.status());
+            incident = mergeByRules(alert, unsureNew || review ? Set.of() : d.sentIncidentIds());
+            if (incident != null && d.sentIncidentIds().contains(incident.getId())) {
+                if (unsureNew) {
+                    note = String.format(Locale.ROOT,
+                            " | AI said PROCESSED with low confidence %.2f: merged by rules into %s",
+                            analysis.lowAiConfidence(), incident.getCode());
+                } else if (review) {
+                    note = String.format(Locale.ROOT,
+                            " | AI asked for review (score %s): same category nearby, merged by rules into %s",
+                            d.score() == null ? "?" : String.format(Locale.ROOT, "%.2f", d.score()), incident.getCode());
+                }
+            }
             if (incident == null && AiClient.NEEDS_REVIEW.equals(d.status())) {
                 possibleDuplicateOf = d.incidentId();
             }

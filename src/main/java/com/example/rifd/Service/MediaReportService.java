@@ -50,8 +50,9 @@ public class MediaReportService {
     private static final String VOICE_FAILED = "مرفق صوتي تعذّر تفريغه، الرجاء الرجوع للمرفق";
     private static final String IMAGE_FAILED = "صور مرفقة تعذّر تحليلها، الرجاء الرجوع للمرفقات";
 
-    // text = the final alert text, attachmentUrl = "up:<voiceId>,<photoId>,..." (voice first) or null
-    public record Result(String text, String attachmentUrl) {
+    // text = the final alert text, attachmentUrl = "up:<voiceId>,<photoId>,..." (voice first) or null,
+    // transcript = what Gemini heard in the voice note (null: no voice note or not transcribed), shown back to the sender
+    public record Result(String text, String attachmentUrl, String transcript) {
     }
 
     private final MediaFileRepository mediaFileRepository;
@@ -100,8 +101,10 @@ public class MediaReportService {
         CompletableFuture<Optional<VisionResult>> detection = detect(images, requestId);
 
         StringBuilder text = new StringBuilder(hasText(baseText) ? baseText.trim() : "");
+        String heard = null;
         if (hasAudio) {
             Optional<String> transcript = gemini.transcribe(audioBytes, audioType);
+            heard = transcript.orElse(null);
             log.info("Web report {} voice: {}", requestId, transcript.map(t -> "'" + t + "'").orElse("not transcribed"));
             addLine(text, transcript.map(t -> VOICE_LABEL + t).orElse(VOICE_FAILED));
         }
@@ -121,7 +124,7 @@ public class MediaReportService {
         // the detection line goes last and is never cut off (it carries "حريق"/"دخان" for the classifier, like Telegram)
         int room = evidence == null ? MAX_TEXT_LENGTH : MAX_TEXT_LENGTH - evidence.length() - 1;
         String body = text.length() > room ? text.substring(0, room) : text.toString();
-        return new Result(evidence == null ? body : body + "\n" + evidence, attachmentUrl);
+        return new Result(evidence == null ? body : body + "\n" + evidence, attachmentUrl, heard);
     }
 
     // AI 2: disabled / no photos / any failure -> empty (never "safe")

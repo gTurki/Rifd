@@ -46,7 +46,7 @@ public class VisitorReportService {
         String code = newCode();
         MediaReportService.Result media = mediaReportService.process(text, photos, audio, "web-" + code);
         create(code, media.text(), language, x, y, zoneCode, media.attachmentUrl());
-        return track(code);
+        return toDTO(code, find(code), media.transcript()); // the sender sees what we heard
     }
 
     private void create(String code, String text, String language, Double x, Double y, String zoneCode,
@@ -59,13 +59,16 @@ public class VisitorReportService {
 
     public VisitorReportDTOOut track(String rawCode) {
         String code = normalize(rawCode);
-        Alert alert = alertRepository.findFirstBySourceReference(REF_PREFIX + code)
+        return toDTO(code, find(code), null);
+    }
+
+    private Alert find(String code) {
+        return alertRepository.findFirstBySourceReference(REF_PREFIX + code)
                 .orElseThrow(() -> new ApiException("Report not found"));
-        return toDTO(code, alert);
     }
 
     // incident + zone are fetched with the alert (@EntityGraph): no session needed here
-    private static VisitorReportDTOOut toDTO(String code, Alert alert) {
+    private static VisitorReportDTOOut toDTO(String code, Alert alert, String transcript) {
         Incident incident = alert.getIncident();
         IncidentStatus status = incident == null ? null : incident.getStatus();
 
@@ -85,7 +88,8 @@ public class VisitorReportService {
         return new VisitorReportDTOOut(code, step, state,
                 alert.getZone() == null ? null : alert.getZone().getCode(),
                 alert.getReceivedAt(),
-                incident == null ? alert.getUpdatedAt() : incident.getUpdatedAt());
+                incident == null ? alert.getUpdatedAt() : incident.getUpdatedAt(),
+                transcript);
     }
 
     private String newCode() {

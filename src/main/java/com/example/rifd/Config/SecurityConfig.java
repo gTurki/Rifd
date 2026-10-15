@@ -29,7 +29,13 @@ import java.nio.charset.StandardCharsets;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private static final String[] ALL_ROLES = {"FIELD", "OPERATOR", "SUPERVISOR"};
+    private static final String FIELD = "FIELD";
+    private static final String OPERATOR = "OPERATOR";
+    private static final String SUPERVISOR = "SUPERVISOR";
+    private static final String[] ALL_ROLES = {FIELD, OPERATOR, SUPERVISOR};
+    private static final String[] CONTROL_ROOM = {OPERATOR, SUPERVISOR};
+
+    private static final String API = "/api/v1";
 
     // false = everything permitAll (plan B for the demo if tokens misbehave)
     @Value("${security.enabled:false}")
@@ -88,26 +94,100 @@ public class SecurityConfig {
         }
 
         http.authorizeHttpRequests(a -> a
+
+                        // ---------------- public ----------------
                         .requestMatchers("/ws", "/ws/**", "/error").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, API + "/auth/login").permitAll()
                         // external sources (sensors, radio gateway, visitor app) push alerts without a token
-                        .requestMatchers(HttpMethod.POST, "/api/v1/alerts", "/api/v1/alerts/batch").permitAll()
+                        .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch").permitAll()
 
-                        .requestMatchers(HttpMethod.POST, "/api/v1/simulation/reset").hasRole("SUPERVISOR")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/accessibility/assets/*/status").hasRole("SUPERVISOR")
+                        // ---------------- supervisor only ----------------
+                        .requestMatchers(HttpMethod.POST, API + "/simulation/reset").hasRole(SUPERVISOR)
+                        .requestMatchers(HttpMethod.PATCH, API + "/accessibility/assets/*/status").hasRole(SUPERVISOR)
 
-                        // field staff: own tasks / notifications / location (ownership is checked in the services)
-                        .requestMatchers(HttpMethod.GET, "/api/v1/tasks", "/api/v1/tasks/*",
-                                "/api/v1/notifications", "/api/v1/staff/*", "/api/v1/auth/me").hasAnyRole(ALL_ROLES)
-                        .requestMatchers(HttpMethod.POST, "/api/v1/tasks/*/accept", "/api/v1/tasks/*/reject")
-                        .hasAnyRole(ALL_ROLES)
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/tasks/*/status", "/api/v1/staff/*/location",
-                                "/api/v1/notifications/*/read").hasAnyRole(ALL_ROLES)
+                        // ---------------- every role (FIELD: own data only, checked in the services) ----------------
+                        .requestMatchers(HttpMethod.GET, API + "/auth/me").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.GET, API + "/tasks", API + "/tasks/*").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.POST, API + "/tasks/*/accept", API + "/tasks/*/reject").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.PATCH, API + "/tasks/*/status").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.GET, API + "/notifications").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.PATCH, API + "/notifications/*/read").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.GET, API + "/staff/*").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.PATCH, API + "/staff/*/location").hasAnyRole(ALL_ROLES)
+                        // the field app draws the map
+                        .requestMatchers(HttpMethod.GET, API + "/zones").hasAnyRole(ALL_ROLES)
 
-                        // everything else = control room
-                        .anyRequest().hasAnyRole("OPERATOR", "SUPERVISOR"))
-                .oauth2ResourceServer(o -> o.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)));
+                        // ---------------- control room: incidents ----------------
+                        .requestMatchers(HttpMethod.GET,
+                                API + "/incidents",
+                                API + "/incidents/*",
+                                API + "/incidents/*/activity",
+                                API + "/incidents/*/recommendations",
+                                API + "/incidents/*/candidates",
+                                API + "/incidents/*/tasks").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.POST,
+                                API + "/incidents/*/acknowledge",
+                                API + "/incidents/*/resolve",
+                                API + "/incidents/*/false-alarm",
+                                API + "/incidents/*/reopen",
+                                API + "/incidents/*/confirm-duplicate",
+                                API + "/incidents/*/not-duplicate",
+                                API + "/incidents/*/recommendations/regenerate").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.PATCH,
+                                API + "/incidents/*/severity",
+                                API + "/incidents/*/status").hasAnyRole(CONTROL_ROOM)
+
+                        // ---------------- control room: alerts ----------------
+                        .requestMatchers(HttpMethod.GET,
+                                API + "/alerts",
+                                API + "/alerts/*",
+                                API + "/alerts/*/attachment").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.POST, API + "/alerts/*/dismiss").hasAnyRole(CONTROL_ROOM)
+
+                        // ---------------- control room: recommendations / tasks ----------------
+                        .requestMatchers(HttpMethod.POST,
+                                API + "/recommendations/*/accept",
+                                API + "/recommendations/*/reject").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.POST,
+                                API + "/tasks",              // manual assignment
+                                API + "/tasks/*/cancel").hasAnyRole(CONTROL_ROOM)
+
+                        // ---------------- control room: staff ----------------
+                        .requestMatchers(HttpMethod.GET, API + "/staff").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.PATCH, API + "/staff/*/status").hasAnyRole(CONTROL_ROOM)
+
+                        // ---------------- control room: accessibility ----------------
+                        .requestMatchers(HttpMethod.GET,
+                                API + "/accessibility/assets",
+                                API + "/accessibility/routes",
+                                API + "/accessibility/routes/*/alternative").hasAnyRole(CONTROL_ROOM)
+
+                        // ---------------- control room: telegram reporters ----------------
+                        .requestMatchers(HttpMethod.GET,
+                                API + "/telegram/reporters",
+                                API + "/telegram/reporters/*").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.POST,
+                                API + "/telegram/reporters/*/block",
+                                API + "/telegram/reporters/*/unblock").hasAnyRole(CONTROL_ROOM)
+
+                        // ---------------- control room: simulation ----------------
+                        .requestMatchers(HttpMethod.POST, API + "/simulation/start").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.GET, API + "/simulation/status").hasAnyRole(CONTROL_ROOM)
+
+                        // ---------------- control room: read-only ----------------
+                        .requestMatchers(HttpMethod.GET,
+                                API + "/activity",
+                                API + "/dashboard/stats",
+                                API + "/events",
+                                API + "/playbooks").hasAnyRole(CONTROL_ROOM)
+
+                        // anything not listed above is closed: a forgotten endpoint fails safe
+                        .anyRequest().denyAll())
+                .oauth2ResourceServer(o -> o
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(converter))
+                        // bad / expired token -> same JSON shape
+                        .authenticationEntryPoint((req, res, ex) -> writeJson(res, 401, "Invalid or expired token")));
 
         return http.build();
     }

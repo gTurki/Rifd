@@ -10,6 +10,7 @@ import com.example.rifd.Repository.IncidentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import com.example.rifd.Enum.IncidentCategory;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -21,6 +22,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.EnumSet;
+
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +40,16 @@ public class MergeService {
     // limits for the request sent to the AI with each alert
     private static final int MAX_AI_INCIDENTS = 10;
     private static final int MAX_AI_TEXTS = 10;
+
+    // ACCESSIBILITY and TECHNICAL_FAILURE go to the same team (TECHNICAL in playbook.csv): an elevator report may be
+    // classified either way (rules: ACCESSIBILITY, AI 1: often TECHNICAL_FAILURE), so the rules let them merge.
+    // The urgent categories (MEDICAL, FIRE, SECURITY, LOST_PERSON) still merge only with their own category
+    private static final Set<IncidentCategory> TECHNICAL_TEAM =
+            EnumSet.of(IncidentCategory.ACCESSIBILITY, IncidentCategory.TECHNICAL_FAILURE);
+
+    private static Set<IncidentCategory> mergeableWith(IncidentCategory category) {
+        return TECHNICAL_TEAM.contains(category) ? TECHNICAL_TEAM : EnumSet.of(category);
+    }
 
     private final IncidentRepository incidentRepository;
     private final AlertRepository alertRepository;
@@ -112,20 +125,22 @@ public class MergeService {
 
     private List<Candidate> findCandidates(Alert alert) {
         List<Candidate> result = new ArrayList<>();
-        for (Incident incident : incidentRepository.findByCategoryAndStatusNotIn(alert.getAiCategory(), CLOSED)) {
-            // every alert was dismissed: nothing real left to merge into
-            if (Integer.valueOf(0).equals(incident.getAlertCount())) continue;
-            Double distance = distance(alert, incident);
-            if (distance == null || distance > maxDistance) continue;
+        for (IncidentCategory category : mergeableWith(alert.getAiCategory())) {
+            for (Incident incident : incidentRepository.findByCategoryAndStatusNotIn(category, CLOSED)) {
+                // every alert was dismissed: nothing real left to merge into
+                if (Integer.valueOf(0).equals(incident.getAlertCount())) continue;
+                Double distance = distance(alert, incident);
+                if (distance == null || distance > maxDistance) continue;
 
-            LocalDateTime last = alertRepository.findLastReceivedAt(incident.getId());
-            if (last == null) last = incident.getCreatedAt();
-            if (last == null) continue;
+                LocalDateTime last = alertRepository.findLastReceivedAt(incident.getId());
+                if (last == null) last = incident.getCreatedAt();
+                if (last == null) continue;
 
-            double minutes = Math.abs(Duration.between(last, alert.getReceivedAt()).toMillis()) / 60000.0;
-            if (minutes > timeWindowMinutes) continue;
+                double minutes = Math.abs(Duration.between(last, alert.getReceivedAt()).toMillis()) / 60000.0;
+                if (minutes > timeWindowMinutes) continue;
 
-            result.add(new Candidate(incident, distance, minutes, last));
+                result.add(new Candidate(incident, distance, minutes, last));
+            }
         }
         return result;
     }

@@ -7,6 +7,9 @@ import com.example.rifd.Service.SimulationService;
 import com.example.rifd.Telegram.TelegramClient.TgDownload;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.example.rifd.Entity.MediaFile;
+import com.example.rifd.Repository.MediaFileRepository;
+import com.example.rifd.Service.MediaReportService;
 
 import java.util.Locale;
 
@@ -27,6 +30,7 @@ public class TelegramAttachmentService {
 
     private final AlertRepository alertRepository;
     private final TelegramClient client;
+    private final MediaFileRepository mediaFileRepository;
 
     // index picks which file of an album (0 = first)
     // no transaction on purpose: no DB connection held during the Telegram download
@@ -43,6 +47,20 @@ public class TelegramAttachmentService {
             byte[] bytes = SimulationService.readImage(name);
             if (bytes == null) throw new ApiException("Scenario image not found");
             return new Attachment(bytes, SimulationService.imageType(name));
+        }
+
+// - up:<id>[,<id>...]     = photos / voice uploaded from the web, stored in media_files
+        if (url.startsWith(MediaReportService.PREFIX)) {
+            String[] ids = url.substring(MediaReportService.PREFIX.length()).split(",");
+            if (index < 0 || index >= ids.length) throw new ApiException("Attachment index out of range");
+            MediaFile file;
+            try {
+                file = mediaFileRepository.findById(Long.parseLong(ids[index].trim()))
+                        .orElseThrow(() -> new ApiException("Attachment not found"));
+            } catch (NumberFormatException e) {
+                throw new ApiException("Attachment not found");
+            }
+            return new Attachment(file.getData(), file.getContentType());
         }
 
         if (!url.startsWith(PREFIX)) throw new ApiException("Unknown attachment type");

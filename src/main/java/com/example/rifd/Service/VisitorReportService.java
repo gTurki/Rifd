@@ -13,9 +13,12 @@ import com.example.rifd.Repository.AlertRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.security.SecureRandom;
 import java.util.Locale;
+import java.util.List;
+
 
 // visitor app: a normal alert (VISITOR_APP, same pipeline) + a random tracking code kept in sourceReference
 // ("rf:RF-XXXXXX", like Telegram's "tg:..."). Random on purpose: sequential ids would let anyone read other reports
@@ -29,14 +32,29 @@ public class VisitorReportService {
     private final SecureRandom random = new SecureRandom();
     private final AlertService alertService;
     private final AlertRepository alertRepository;
+    private final MediaReportService mediaReportService;
 
     public VisitorReportDTOOut submit(VisitorReportDTOIn dto) {
         String code = newCode();
-        AlertDTOIn alert = new AlertDTOIn(AlertSource.VISITOR_APP, REF_PREFIX + code, dto.text().trim(),
-                dto.language(), null, dto.x(), dto.y(),
-                StringUtils.hasText(dto.zoneCode()) ? dto.zoneCode().trim() : null, null);
-        alertService.ingest(alert); // runs the whole pipeline (classification + merge) before returning
+        create(code, dto.text().trim(), dto.language(), dto.x(), dto.y(), dto.zoneCode(), null);
         return track(code);
+    }
+
+    // same report with photos / a voice note (multipart). The analysis is added to the text before the pipeline
+    public VisitorReportDTOOut submitMedia(String text, String language, Double x, Double y, String zoneCode,
+                                           List<MultipartFile> photos, MultipartFile audio) {
+        String code = newCode();
+        MediaReportService.Result media = mediaReportService.process(text, photos, audio, "web-" + code);
+        create(code, media.text(), language, x, y, zoneCode, media.attachmentUrl());
+        return track(code);
+    }
+
+    private void create(String code, String text, String language, Double x, Double y, String zoneCode,
+                        String attachmentUrl) {
+        AlertDTOIn alert = new AlertDTOIn(AlertSource.VISITOR_APP, REF_PREFIX + code, text,
+                language, attachmentUrl, x, y,
+                StringUtils.hasText(zoneCode) ? zoneCode.trim() : null, null);
+        alertService.ingest(alert); // runs the whole pipeline (classification + merge) before returning
     }
 
     public VisitorReportDTOOut track(String rawCode) {

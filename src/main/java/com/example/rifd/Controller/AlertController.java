@@ -14,6 +14,10 @@ import com.example.rifd.Telegram.TelegramAttachmentService;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import com.example.rifd.Enum.AlertSource;
+import com.example.rifd.Service.MediaReportService;
+import org.springframework.web.multipart.MultipartFile;
+import java.util.List;
 
 import java.time.Duration;
 
@@ -25,6 +29,7 @@ public class AlertController {
     private final AlertService alertService;
     private final CurrentUser currentUser;
     private final TelegramAttachmentService telegramAttachmentService;
+    private final MediaReportService mediaReportService;
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(@PathVariable Long id) {
@@ -57,6 +62,23 @@ public class AlertController {
 
     @PostMapping
     public ResponseEntity<?> ingest(@RequestBody @Valid AlertDTOIn alert) {
+        return ResponseEntity.ok(alertService.ingest(alert));
+    }
+
+    // staff report from the app with photos / a voice note (multipart): analyzed, then the normal pipeline
+    @PostMapping(value = "/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> ingestMedia(@RequestParam(required = false) String sourceReference,
+                                         @RequestParam(required = false) String text,
+                                         @RequestParam(required = false) String language,
+                                         @RequestParam(required = false) Double x,
+                                         @RequestParam(required = false) Double y,
+                                         @RequestParam(required = false) String zoneCode,
+                                         @RequestParam(required = false) List<MultipartFile> photos,
+                                         @RequestParam(required = false) MultipartFile audio) {
+        String requestId = "staff-" + System.currentTimeMillis();
+        MediaReportService.Result media = mediaReportService.process(text, photos, audio, requestId);
+        AlertDTOIn alert = new AlertDTOIn(AlertSource.STAFF_APP, sourceReference, media.text(), language,
+                media.attachmentUrl(), x, y, zoneCode == null || zoneCode.isBlank() ? null : zoneCode.trim(), null);
         return ResponseEntity.ok(alertService.ingest(alert));
     }
 

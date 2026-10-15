@@ -6,5 +6,6 @@ public enum AlertSource {
     VISITOR_APP,
     IOT_SENSOR,
     SERVICE_REQUEST,
-    TELEGRAM
+    TELEGRAM,
+    STAFF_APP
 }

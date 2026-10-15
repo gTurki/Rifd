@@ -1,16 +1,20 @@
 package com.example.rifd.Controller;
 
 import com.example.rifd.DTOIn.LocationDTOIn;
+import com.example.rifd.DTOIn.StaffCreateDTOIn;
 import com.example.rifd.DTOIn.StaffStatusDTOIn;
 import com.example.rifd.Enum.StaffRole;
 import com.example.rifd.Enum.StaffSpecialty;
 import com.example.rifd.Enum.StaffStatus;
 import com.example.rifd.Security.CurrentUser;
+import com.example.rifd.Service.StaffAccountService;
 import com.example.rifd.Service.StaffService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/staff")
@@ -19,6 +23,7 @@ public class StaffController {
 
     private final StaffService staffService;
     private final CurrentUser currentUser;
+    private final StaffAccountService staffAccountService;
 
     @GetMapping
     public ResponseEntity<?> search(@RequestParam(required = false) StaffStatus status,
@@ -42,5 +47,16 @@ public class StaffController {
     @PatchMapping("/{id}/status")
     public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestBody @Valid StaffStatusDTOIn dto) {
         return ResponseEntity.ok(staffService.updateStatus(id, dto.status()));
+    }
+
+    @PostMapping
+    public ResponseEntity<?> create(@RequestBody @Valid StaffCreateDTOIn dto) {
+        return ResponseEntity.ok(staffAccountService.create(dto));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> delete(@PathVariable Long id) {
+        staffAccountService.delete(id);
+        return ResponseEntity.ok(Map.of("message", "Account deleted"));
     }
 }

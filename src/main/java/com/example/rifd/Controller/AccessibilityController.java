@@ -1,6 +1,7 @@
 package com.example.rifd.Controller;
 
 import com.example.rifd.DTOIn.AssetStatusDTOIn;
+import com.example.rifd.DTOIn.DecisionDTOIn;
 import com.example.rifd.Security.CurrentUser;
 import com.example.rifd.Service.AccessibilityService;
 import com.example.rifd.Service.IncidentService;
@@ -38,5 +39,12 @@ public class AccessibilityController {
     @GetMapping("/routes/{id}/alternative")
     public ResponseEntity<?> alternative(@PathVariable Long id) {
         return ResponseEntity.ok(accessibilityService.getAlternative(id));
+    }
+
+    @PostMapping("/routes/{id}/publish")
+    public ResponseEntity<?> publish(@PathVariable Long id, @RequestBody(required = false) DecisionDTOIn dto) {
+        Long actor = currentUser.actorId(dto == null ? null : dto.actorStaffId());
+        incidentService.validateOperator(actor);
+        return ResponseEntity.ok(accessibilityService.publishRoute(id, actor));
     }
 }

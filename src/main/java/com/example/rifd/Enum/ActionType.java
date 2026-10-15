@@ -11,5 +11,6 @@ public enum ActionType {
     ESCALATED,
     RESOLVED,
     ACKNOWLEDGED,
-    REOPENED
+    REOPENED,
+    PUBLISHED
 }

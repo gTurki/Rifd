@@ -2,10 +2,12 @@ package com.example.rifd.Repository;
 
 import com.example.rifd.Entity.Alert;
 import com.example.rifd.Enum.AlertStatus;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import java.util.Optional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,4 +32,8 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
     LocalDateTime findLastReceivedAt(@Param("incidentId") Long incidentId);
 
     long countByStatus(AlertStatus status);
+
+    // visitor tracking (rf:RF-XXXXXX): incident + zone loaded with the alert
+    @EntityGraph(attributePaths = {"incident", "zone"})
+    Optional<Alert> findFirstBySourceReference(String sourceReference);
 }

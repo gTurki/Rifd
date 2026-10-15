@@ -54,4 +54,7 @@ public class AccessibleRoute extends BaseEntity {
     private String publicMessageEn;
 
     private LocalDateTime lastUpdated;
+
+    // operator confirmed the alternative for the visitor app; cleared when the route changes again
+    private LocalDateTime publishedAt;
 }

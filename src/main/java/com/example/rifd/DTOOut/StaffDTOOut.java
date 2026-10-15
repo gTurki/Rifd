@@ -14,6 +14,7 @@ public record StaffDTOOut(
         String employeeNumber,
         String name,
         String phone,
+        String email,
         StaffRole role,
         StaffSpecialty specialty,
         StaffLevel level,

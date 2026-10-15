@@ -51,4 +51,6 @@ public interface StaffRepository extends JpaRepository<Staff, Long> {
            """)
     int resetStaff(@Param("id") Long id, @Param("status") StaffStatus status,
                    @Param("x") Double x, @Param("y") Double y, @Param("now") LocalDateTime now);
+
+    boolean existsByEmployeeNumber(String employeeNumber);
 }

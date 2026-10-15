@@ -7,10 +7,13 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -87,18 +90,24 @@ public class VisionClient {
                         @Value("${vision-ai.base-url:http://127.0.0.1:8000}") String baseUrl,
                         @Value("${vision-ai.timeout-ms:10000}") long timeoutMs,
                         @Value("${vision-ai.warmup-timeout-ms:120000}") long warmupTimeoutMs,
-                        @Value("${vision-ai.min-confidence:0.45}") double minConfidence) {
+                        @Value("${vision-ai.min-confidence:0.45}") double minConfidence,
+                        @Value("${vision-ai.token:}") String token) {
         this.enabled = enabled;
         this.minConfidence = minConfidence;
-        this.restClient = client(baseUrl, timeoutMs);
-        this.warmupClient = client(baseUrl, warmupTimeoutMs);
+        this.restClient = client(baseUrl, timeoutMs, token);
+        this.warmupClient = client(baseUrl, warmupTimeoutMs, token);
     }
 
-    private static RestClient client(String baseUrl, long timeoutMs) {
+    // the Space is private: every call (analyze + warm-up) carries the Hugging Face token
+    private static RestClient client(String baseUrl, long timeoutMs, String token) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(timeoutMs));
         requestFactory.setReadTimeout(Duration.ofMillis(timeoutMs));
-        return RestClient.builder().baseUrl(baseUrl).requestFactory(requestFactory).build();
+        RestClient.Builder builder = RestClient.builder().baseUrl(baseUrl).requestFactory(requestFactory);
+        if (token != null && !token.isBlank()) {
+            builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        }
+        return builder.build();
     }
 
     public boolean isEnabled() {
@@ -152,19 +161,29 @@ public class VisionClient {
     private Optional<Analysis> analyze(ImageData image, String requestId, String imageId, String source, Instant capturedAt) {
         try {
             MediaType type = mediaType(image.mimeType());
-            MultipartBodyBuilder body = new MultipartBodyBuilder();
-            body.part("file", new ByteArrayResource(image.bytes()))
-                    .filename(MediaType.IMAGE_PNG.equals(type) ? "photo.png" : "photo.jpg")
-                    .contentType(type);
-            body.part("requestId", requestId);
-            body.part("imageId", imageId);
-            body.part("source", source);
-            body.part("capturedAt", (capturedAt == null ? Instant.now() : capturedAt).toString());
+            String filename = MediaType.IMAGE_PNG.equals(type) ? "photo.png" : "photo.jpg";
+
+            // plain multipart (no MultipartBodyBuilder: it needs reactive-streams, which is not on the classpath)
+            ByteArrayResource file = new ByteArrayResource(image.bytes()) {
+                @Override
+                public String getFilename() {
+                    return filename;
+                }
+            };
+            HttpHeaders fileHeaders = new HttpHeaders();
+            fileHeaders.setContentType(type);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", new HttpEntity<>(file, fileHeaders));
+            body.add("requestId", requestId);
+            body.add("imageId", imageId);
+            body.add("source", source);
+            body.add("capturedAt", (capturedAt == null ? Instant.now() : capturedAt).toString());
 
             Analysis analysis = restClient.post()
                     .uri("/v1/analyze/image")
                     .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .body(body.build())
+                    .body(body)
                     .retrieve()
                     .body(Analysis.class);
 
@@ -173,8 +192,8 @@ public class VisionClient {
                 return Optional.empty();
             }
             return Optional.of(analysis);
-        } catch (Exception e) {
-            log.warn("Vision analyze failed for {} (ignored, not treated as safe): {}", imageId, e.getMessage());
+        } catch (Exception | LinkageError e) {
+            log.warn("Vision analyze failed for {} (ignored, not treated as safe): {}", imageId, e.toString());
             return Optional.empty();
         }
     }

@@ -21,6 +21,8 @@ public class Staff extends BaseEntity {
 
     private String phone;
 
+    private String email;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private StaffRole role;

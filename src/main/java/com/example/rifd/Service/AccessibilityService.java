@@ -206,6 +206,24 @@ public class AccessibilityService {
                 messages[0], messages[1]);
     }
 
+    // operator confirms the alternative for visitors (the visitor app shows DISRUPTED routes with publishedAt only)
+    public AccessibleRouteDTOOut publishRoute(Long routeId, Long actorId) {
+        return locked(() -> tx.execute(s -> {
+            AccessibleRoute route = routeRepository.findById(routeId)
+                    .orElseThrow(() -> new ApiException("Route not found"));
+            if (route.getStatus() != RouteStatus.DISRUPTED) {
+                throw new ApiException("The route is not disrupted: nothing to publish");
+            }
+            route.setPublishedAt(LocalDateTime.now());
+            routeRepository.save(route);
+            activityLogService.log(EntityType.ROUTE, route.getId(), null, ActionType.PUBLISHED, ActorType.HUMAN, actorId,
+                    null, null, "Alternative published to visitors: " + route.getPublicMessageEn());
+            AccessibleRouteDTOOut out = DTOMapper.toDTO(route);
+            broadcastService.send(BroadcastService.ROUTES, "ROUTE_PUBLISHED", out);
+            return out;
+        }));
+    }
+
     // used by /simulation/reset
     @Transactional
     public void resetAll() {
@@ -214,6 +232,7 @@ public class AccessibilityService {
             r.setAlternativeRoute(null);
             r.setPublicMessageAr(null);
             r.setPublicMessageEn(null);
+            r.setPublishedAt(null);
             r.setLastUpdated(LocalDateTime.now());
         }
         for (AccessibilityAsset a : assetRepository.findAll()) {
@@ -278,6 +297,7 @@ public class AccessibilityService {
                 route.setAlternativeRoute(null);
                 route.setPublicMessageAr(null);
                 route.setPublicMessageEn(null);
+                route.setPublishedAt(null);
                 route.setLastUpdated(LocalDateTime.now());
                 routeRepository.save(route);
                 logRoute(route, incidentId, actorType, actorId, oldStatus, "Route restored");
@@ -299,6 +319,7 @@ public class AccessibilityService {
             route.setAlternativeRoute(newAlt);
             route.setPublicMessageAr(messages[0]);
             route.setPublicMessageEn(messages[1]);
+            route.setPublishedAt(null);
             route.setLastUpdated(LocalDateTime.now());
             routeRepository.save(route);
 

@@ -14,6 +14,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.sql.SQLIntegrityConstraintViolationException;
 
@@ -83,6 +86,28 @@ public class ControllerAdvice {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse> runtimeException(RuntimeException exception) {
+        log.error("Unexpected request failure", exception);
+        return ResponseEntity.status(400).body(new ApiResponse("Unable to complete the request."));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse> noResourceFoundException(NoResourceFoundException exception) {
+        return ResponseEntity.status(400).body(new ApiResponse("Endpoint not found: " + exception.getResourcePath()));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse> httpMediaTypeNotSupportedException(HttpMediaTypeNotSupportedException exception) {
+        return ResponseEntity.status(400).body(new ApiResponse("Content-Type must be application/json."));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse> missingServletRequestParameterException(MissingServletRequestParameterException exception) {
+        return ResponseEntity.status(400).body(new ApiResponse("Missing parameter '" + exception.getParameterName() + "'."));
+    }
+
+    // checked exceptions (IOException ...): RuntimeException above does not catch them
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse> exception(Exception exception) {
         log.error("Unexpected request failure", exception);
         return ResponseEntity.status(400).body(new ApiResponse("Unable to complete the request."));
     }

@@ -99,15 +99,27 @@ public class SecurityConfig {
                         .requestMatchers("/ws", "/ws/**", "/error").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, API + "/auth/login").permitAll()
-                        // external sources (sensors, radio gateway, visitor app) push alerts without a token
+                        // external sources (sensors, radio gateway, staff app) push alerts without a token
                         .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch").permitAll()
+                        // visitor app: report + track by a random code
+                        .requestMatchers(HttpMethod.POST, API + "/visitor-reports").permitAll()
+                        .requestMatchers(HttpMethod.GET, API + "/visitor-reports/*").permitAll()
+                        // visitor app: map zones + accessible routes and their alternatives (public information)
+                        .requestMatchers(HttpMethod.GET,
+                                API + "/zones",
+                                API + "/accessibility/routes",
+                                API + "/accessibility/routes/*/alternative").permitAll()
 
                         // ---------------- supervisor only ----------------
                         .requestMatchers(HttpMethod.POST, API + "/simulation/reset").hasRole(SUPERVISOR)
                         .requestMatchers(HttpMethod.PATCH, API + "/accessibility/assets/*/status").hasRole(SUPERVISOR)
+                        .requestMatchers(HttpMethod.POST, API + "/staff").hasRole(SUPERVISOR)
+                        .requestMatchers(HttpMethod.DELETE, API + "/staff/*").hasRole(SUPERVISOR)
 
                         // ---------------- every role (FIELD: own data only, checked in the services) ----------------
                         .requestMatchers(HttpMethod.GET, API + "/auth/me").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.PATCH, API + "/auth/me").hasAnyRole(ALL_ROLES)
+                        .requestMatchers(HttpMethod.POST, API + "/auth/me/password").hasAnyRole(ALL_ROLES)
                         .requestMatchers(HttpMethod.GET, API + "/tasks", API + "/tasks/*").hasAnyRole(ALL_ROLES)
                         .requestMatchers(HttpMethod.POST, API + "/tasks/*/accept", API + "/tasks/*/reject").hasAnyRole(ALL_ROLES)
                         .requestMatchers(HttpMethod.PATCH, API + "/tasks/*/status").hasAnyRole(ALL_ROLES)
@@ -115,8 +127,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, API + "/notifications/*/read").hasAnyRole(ALL_ROLES)
                         .requestMatchers(HttpMethod.GET, API + "/staff/*").hasAnyRole(ALL_ROLES)
                         .requestMatchers(HttpMethod.PATCH, API + "/staff/*/location").hasAnyRole(ALL_ROLES)
-                        // the field app draws the map
-                        .requestMatchers(HttpMethod.GET, API + "/zones").hasAnyRole(ALL_ROLES)
 
                         // ---------------- control room: incidents ----------------
                         .requestMatchers(HttpMethod.GET,
@@ -158,10 +168,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, API + "/staff/*/status").hasAnyRole(CONTROL_ROOM)
 
                         // ---------------- control room: accessibility ----------------
-                        .requestMatchers(HttpMethod.GET,
-                                API + "/accessibility/assets",
-                                API + "/accessibility/routes",
-                                API + "/accessibility/routes/*/alternative").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.GET, API + "/accessibility/assets").hasAnyRole(CONTROL_ROOM)
+                        .requestMatchers(HttpMethod.POST, API + "/accessibility/routes/*/publish").hasAnyRole(CONTROL_ROOM)
 
                         // ---------------- control room: telegram reporters ----------------
                         .requestMatchers(HttpMethod.GET,

@@ -63,7 +63,8 @@ public class SimulationService {
     // attachmentUrl of a camera alert = scenario:<file name>, served by /alerts/{id}/attachment
     public static final String IMAGE_PREFIX = "scenario:";
     public static final String IMAGE_DIR = "scenario/images/";
-    private static final String VISION_SOURCE = "CCTV";
+    // ExpoGuard accepts only VISITOR_APP as source (CCTV -> INVALID_REQUEST); the alert itself stays a camera alert
+    private static final String VISION_SOURCE = "VISITOR_APP";
 
     // ?scenario=demo (the 40 -> 3 story) or ?scenario=fire (smart cameras at Gate 1)
     private static final Map<String, String> SCENARIOS = Map.of(

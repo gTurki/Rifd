@@ -20,6 +20,7 @@ public record AccessibleRouteDTOOut(
         String publicMessageEn,
         LocalDateTime lastUpdated,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        LocalDateTime publishedAt
 ) {
 }

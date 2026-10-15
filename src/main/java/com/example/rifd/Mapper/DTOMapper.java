@@ -79,7 +79,7 @@ public final class DTOMapper {
     }
 
     public static StaffDTOOut toDTO(Staff staff) {
-        return new StaffDTOOut(staff.getId(), staff.getEmployeeNumber(), staff.getName(), staff.getPhone(),
+        return new StaffDTOOut(staff.getId(), staff.getEmployeeNumber(), staff.getName(), staff.getPhone(), staff.getEmail(),
                 staff.getRole(), staff.getSpecialty(), staff.getLevel(), staff.getStatus(), idOf(staff.getHomeZone()),
                 staff.getCurrentX(), staff.getCurrentY(), staff.getLastLocationUpdate(),
                 staff.getShiftStart(), staff.getShiftEnd(), staff.getUsername(),
@@ -137,7 +137,7 @@ public final class DTOMapper {
                 r.getPathCoordinates(), r.getLengthMeters(), r.getEstimatedMinutes(), r.getStatus(),
                 r.getAssets().stream().map(AccessibilityAsset::getId).toList(),
                 idOf(r.getAlternativeRoute()), r.getPublicMessageAr(), r.getPublicMessageEn(), r.getLastUpdated(),
-                r.getCreatedAt(), r.getUpdatedAt());
+                r.getCreatedAt(), r.getUpdatedAt(), r.getPublishedAt());
     }
 
     private static Long idOf(BaseEntity entity) {

@@ -37,7 +37,7 @@ public class SecurityConfig {
 
     private static final String API = "/api/v1";
 
-    // false = everything permitAll (plan B for the demo if tokens misbehave)
+    // false = everything permitAll (local dev / plan B). On the server: SECURITY_ENABLED=true
     @Value("${security.enabled:false}")
     private boolean enabled;
 
@@ -100,9 +100,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, API + "/auth/login").permitAll()
                         // external sources (sensors, radio gateway, staff app) push alerts without a token
-                        .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch").permitAll()
-                        // visitor app: report + track by a random code
-                        .requestMatchers(HttpMethod.POST, API + "/visitor-reports").permitAll()
+                        .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch", API + "/alerts/media").permitAll()
+                        // visitor app: report (text or photos/voice) + track by a random code
+                        .requestMatchers(HttpMethod.POST, API + "/visitor-reports", API + "/visitor-reports/media").permitAll()
                         .requestMatchers(HttpMethod.GET, API + "/visitor-reports/*").permitAll()
                         // visitor app: map zones + accessible routes and their alternatives (public information)
                         .requestMatchers(HttpMethod.GET,

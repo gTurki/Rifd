@@ -48,6 +48,7 @@ public class StaffAccountService {
     private final PasswordEncoder passwordEncoder;
     private final StaffService staffService;
     private final BroadcastService broadcastService;
+    private final WhatsAppService whatsAppService;
     private final CurrentUser currentUser;
 
     // ---------------- accounts ----------------
@@ -75,7 +76,7 @@ public class StaffAccountService {
         Staff s = new Staff();
         s.setEmployeeNumber(number);
         s.setName(dto.name().trim());
-        s.setPhone(blankToNull(dto.phone()));
+        s.setPhone(normalizePhone(dto.phone()));
         s.setEmail(blankToNull(dto.email()));
         s.setRole(dto.role());
         s.setSpecialty(field ? dto.specialty() : null);
@@ -95,6 +96,7 @@ public class StaffAccountService {
 
         staffRepository.save(s);
         staffService.broadcast(s);
+        whatsAppService.staffCreated(s, username, password); // W1, after the commit
         return new StaffCreatedDTOOut(DTOMapper.toDTO(s), username, password);
     }
 
@@ -120,7 +122,7 @@ public class StaffAccountService {
     @Transactional
     public StaffDTOOut updateProfile(Long staffId, ProfileDTOIn dto) {
         Staff staff = staffService.getStaff(staffId);
-        staff.setPhone(blankToNull(dto.phone()));
+        staff.setPhone(normalizePhone(dto.phone()));
         staff.setEmail(blankToNull(dto.email()));
         staffService.broadcast(staff);
         return DTOMapper.toDTO(staff);
@@ -168,6 +170,14 @@ public class StaffAccountService {
 
     private void add(List<Character> chars, String set, int count) {
         for (int i = 0; i < count; i++) chars.add(set.charAt(random.nextInt(set.length())));
+    }
+
+    // local Saudi mobile "05XXXXXXXX" (spaces / dashes allowed) -> "+9665XXXXXXXX"; anything else is kept as typed
+    private static String normalizePhone(String phone) {
+        String p = blankToNull(phone);
+        if (p == null) return null;
+        String compact = p.replaceAll("[\\s-]", "");
+        return compact.matches("05\\d{8}") ? "+966" + compact.substring(1) : p;
     }
 
     private static String blankToNull(String s) {

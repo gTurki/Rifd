@@ -60,6 +60,7 @@ public class AssignmentService {
     private final NotificationService notificationService;
     private final ActivityLogService activityLogService;
     private final BroadcastService broadcastService;
+    private final WhatsAppService whatsAppService;
 
     @Value("${assignment.walking-speed-mps:1.3}")
     private double walkingSpeed;
@@ -191,6 +192,7 @@ public class AssignmentService {
         }
         escalate(incident, "No replacement " + specialty + " (" + level + ") for task #" + rejected.getId()
                 + " (" + why + ")");
+        whatsAppService.escalated(incident); // W3: only when the automatic re-assignment found nobody
     }
 
     // ---------------- escalation ----------------
@@ -230,6 +232,7 @@ public class AssignmentService {
                         + (pick.escort() ? " (escort)" : "")
                         + (task.getEstimatedArrivalMinutes() == null ? "" : " — ETA " + task.getEstimatedArrivalMinutes() + " min"),
                 incident.getSeverity());
+        whatsAppService.taskAssigned(staff, incident); // W2 (HIGH only), after the commit
 
         broadcastService.send(BroadcastService.TASKS, "TASK_CREATED", DTOMapper.toDTO(task));
         return task;

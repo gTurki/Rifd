@@ -206,7 +206,7 @@ public class DataSeeder implements CommandLineRunner {
         Staff s = new Staff();
         s.setEmployeeNumber(number);
         s.setName(name);
-        s.setPhone("+9665" + String.format("%08d", Math.abs(number.hashCode()) % 100_000_000));
+        s.setPhone("+966549931017"); // demo: every seeded account gets the team's WhatsApp number
         s.setRole(role);
         s.setSpecialty(specialty);
         s.setLevel(level);

@@ -12,6 +12,7 @@ import com.example.rifd.Enum.AlertSource;
 import com.example.rifd.Enum.AlertStatus;
 import com.example.rifd.Enum.IncidentStatus;
 import com.example.rifd.Repository.AlertRepository;
+import com.example.rifd.Repository.TaskRepository;
 import com.example.rifd.Security.CurrentUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class VisitorReportService {
     private final MediaReportService mediaReportService;
     private final ReportDraftService reportDraftService;
     private final CurrentUser currentUser;
+    private final TaskRepository taskRepository;
 
     // every report needs a signed-in visitor (visitor page sign-in); the report is linked to the account
     public VisitorReportDTOOut submit(VisitorReportDTOIn dto) {
@@ -119,7 +121,7 @@ public class VisitorReportService {
     }
 
     // incident + zone are fetched with the alert (@EntityGraph): no session needed here
-    private static VisitorReportDTOOut toDTO(String code, Alert alert, String transcript) {
+    private VisitorReportDTOOut toDTO(String code, Alert alert, String transcript) {
         Incident incident = alert.getIncident();
         IncidentStatus status = incident == null ? null : incident.getStatus();
 
@@ -140,7 +142,9 @@ public class VisitorReportService {
                 alert.getZone() == null ? null : alert.getZone().getCode(),
                 alert.getReceivedAt(),
                 incident == null ? alert.getUpdatedAt() : incident.getUpdatedAt(),
-                transcript);
+                transcript,
+                step == 3 || incident == null ? 0
+                        : (int) taskRepository.countByIncidentIdAndStatusIn(incident.getId(), StaffService.ACTIVE_TASK));
     }
 
     private String newCode() {

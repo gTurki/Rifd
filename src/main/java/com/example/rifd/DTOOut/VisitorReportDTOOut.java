@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 // what a visitor may see about their own report: no incident code, staff names or internal notes.
 // transcript: what we heard in the voice note, only in the answer to POST /visitor-reports/media (null when tracking)
 // step: 0 RECEIVED, 1 ASSIGNED, 2 IN_PROGRESS, 3 RESOLVED / CLOSED
+// teamSize: how many staff are working on it right now (a number only, no names)
 public record VisitorReportDTOOut(
         String trackingCode,
         int step,
@@ -12,6 +13,7 @@ public record VisitorReportDTOOut(
         String zoneCode,
         LocalDateTime receivedAt,
         LocalDateTime updatedAt,
-        String transcript
+        String transcript,
+        int teamSize
 ) {
 }

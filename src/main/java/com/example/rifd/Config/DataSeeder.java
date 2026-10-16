@@ -47,7 +47,8 @@ import static com.example.rifd.Enum.StaffLevel.ASSISTANT;
 import static com.example.rifd.Enum.StaffLevel.CERTIFIED;
 import static com.example.rifd.Enum.StaffSpecialty.*;
 
-// Demo data shaped for the scenario (section 12). Runs only when the DB is empty (always, with create-drop).
+// Demo data shaped for the scenario (section 12). Runs only when the DB is empty (always, with create-drop);
+// on an existing database only the missing reinforcement staff are added (seedReinforcements).
 // Map (meters, 800 x 600):
 //   PD(620,120)          G2(760,300)
 //   PA(180,160)  PB(410,200)
@@ -76,7 +77,10 @@ public class DataSeeder implements CommandLineRunner {
     @Transactional
     public void run(String... args) {
         if (zoneRepository.count() > 0) {
-            log.info("DataSeeder skipped: data already present");
+            // existing database (Railway): only the reinforcement staff are added, once, if missing
+            zoneRepository.findAll().forEach(z -> zones.put(z.getCode(), z));
+            int added = seedReinforcements(passwordEncoder.encode(DEMO_PASSWORD));
+            log.info("DataSeeder skipped: data already present{}", added > 0 ? " (" + added + " reinforcement staff added)" : "");
             return;
         }
         seedZones();
@@ -195,6 +199,58 @@ public class DataSeeder implements CommandLineRunner {
         field("V-101", "Maha Alfaisal", VISITOR_SERVICES, CERTIFIED, "G1", hash);
         field("V-201", "Abeer Alsulami", VISITOR_SERVICES, ASSISTANT, "SV", hash);
         field("V-202", "Nawaf Alhazmi", VISITOR_SERVICES, ASSISTANT, "PA", hash);
+
+        seedReinforcements(hash);
+    }
+
+    // second shift on duty: a HIGH plan takes a whole team (fire 4, crowd 5, security 3...), so with the first
+    // list alone a second HIGH incident of the same kind found nobody. Also added to an existing database
+    // (skipped one by one when the employee number is already there). Returns how many were added
+    private int seedReinforcements(String hash) {
+        int before = (int) staffRepository.count();
+        // fire safety
+        extra("F-105", "Ahmed Alzahrani", FIRE_SAFETY, CERTIFIED, "PB", hash);
+        extra("F-106", "Yousef Alghamdi", FIRE_SAFETY, CERTIFIED, "G3", hash);
+        extra("F-107", "Ali Alshamrani", FIRE_SAFETY, CERTIFIED, "PA", hash);
+        extra("F-108", "Hassan Alqarni", FIRE_SAFETY, CERTIFIED, "PC", hash);
+        extra("F-202", "Mazen Alotaibi", FIRE_SAFETY, ASSISTANT, "MP", hash);
+        // medical
+        extra("M-103", "Dr. Nouf Alharbi", MEDICAL, CERTIFIED, "MP", hash);
+        extra("M-104", "Abdulaziz Aldossary", MEDICAL, CERTIFIED, "G1", hash);
+        extra("M-105", "Dr. Amal Alzahrani", MEDICAL, CERTIFIED, "TH", hash);
+        extra("M-106", "Raed Almalki", MEDICAL, CERTIFIED, "G2", hash);
+        extra("M-202", "Ghada Alshehri", MEDICAL, ASSISTANT, "PB", hash);
+        // security
+        extra("S-104", "Fawaz Alanazi", SECURITY, CERTIFIED, "PB", hash);
+        extra("S-105", "Muath Alharthi", SECURITY, CERTIFIED, "G2", hash);
+        extra("S-106", "Talal Alrashidi", SECURITY, CERTIFIED, "SV", hash);
+        extra("S-107", "Ayman Alsulami", SECURITY, CERTIFIED, "PC", hash);
+        extra("S-202", "Osama Albishi", SECURITY, ASSISTANT, "MP", hash);
+        // crowd management
+        extra("C-106", "Badr Alqahtani", CROWD_MANAGEMENT, CERTIFIED, "MP", hash);
+        extra("C-107", "Nawaf Alshammari", CROWD_MANAGEMENT, CERTIFIED, "G2", hash);
+        extra("C-108", "Ziad Almutairi", CROWD_MANAGEMENT, CERTIFIED, "PD", hash);
+        extra("C-109", "Faris Alenezi", CROWD_MANAGEMENT, CERTIFIED, "SV", hash);
+        extra("C-110", "Hamza Alghamdi", CROWD_MANAGEMENT, CERTIFIED, "G3", hash);
+        extra("C-204", "Rayan Alzahrani", CROWD_MANAGEMENT, ASSISTANT, "PA", hash);
+        // technical
+        extra("T-103", "Waleed Alqahtani", TECHNICAL, CERTIFIED, "MP", hash);
+        extra("T-104", "Sami Alharbi", TECHNICAL, CERTIFIED, "PD", hash);
+        extra("T-105", "Khaled Aldosari", TECHNICAL, CERTIFIED, "G1", hash);
+        extra("T-202", "Anas Alotaibi", TECHNICAL, ASSISTANT, "PC", hash);
+        // visitor services
+        extra("V-102", "Reema Alqahtani", VISITOR_SERVICES, CERTIFIED, "MP", hash);
+        extra("V-103", "Saud Alanazi", VISITOR_SERVICES, CERTIFIED, "PC", hash);
+        extra("V-203", "Lulwa Alharbi", VISITOR_SERVICES, ASSISTANT, "G3", hash);
+        // accessibility
+        extra("A-102", "Norah Alshehri", ACCESSIBILITY, CERTIFIED, "G1", hash);
+        extra("A-202", "Shahad Almutairi", ACCESSIBILITY, ASSISTANT, "PC", hash);
+        return (int) staffRepository.count() - before;
+    }
+
+    private void extra(String number, String name, StaffSpecialty specialty, StaffLevel level, String home, String hash) {
+        if (staffRepository.existsByEmployeeNumber(number) || staffRepository.findByUsername(number).isPresent()) return;
+        field(number, name, specialty, level, home, hash);
     }
 
     private void field(String number, String name, StaffSpecialty specialty, StaffLevel level, String home, String hash) {

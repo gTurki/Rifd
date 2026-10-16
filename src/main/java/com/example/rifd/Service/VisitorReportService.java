@@ -2,7 +2,9 @@ package com.example.rifd.Service;
 
 import com.example.rifd.Api.ApiException;
 import com.example.rifd.DTOIn.AlertDTOIn;
+import com.example.rifd.DTOIn.ReportConfirmDTOIn;
 import com.example.rifd.DTOIn.VisitorReportDTOIn;
+import com.example.rifd.DTOOut.ReportPreviewDTOOut;
 import com.example.rifd.DTOOut.VisitorReportDTOOut;
 import com.example.rifd.Entity.Alert;
 import com.example.rifd.Entity.Incident;
@@ -33,6 +35,7 @@ public class VisitorReportService {
     private final AlertService alertService;
     private final AlertRepository alertRepository;
     private final MediaReportService mediaReportService;
+    private final ReportDraftService reportDraftService;
 
     public VisitorReportDTOOut submit(VisitorReportDTOIn dto) {
         String code = newCode();
@@ -47,6 +50,27 @@ public class VisitorReportService {
         MediaReportService.Result media = mediaReportService.process(text, photos, audio, "web-" + code);
         create(code, media.text(), language, x, y, zoneCode, media.attachmentUrl());
         return toDTO(code, find(code), media.transcript()); // the sender sees what we heard
+    }
+
+    // two steps: preview (what we heard + where) -> the visitor checks / corrects it -> confirm
+    public ReportPreviewDTOOut preview(String text, String language, Double x, Double y, String zoneCode,
+                                       List<MultipartFile> photos, MultipartFile audio) {
+        ReportDraftService.Draft draft = reportDraftService.create(ReportDraftService.Kind.VISITOR, text, language,
+                x, y, zoneCode, null, photos, audio);
+        return reportDraftService.preview(draft, zoneCode);
+    }
+
+    public VisitorReportDTOOut confirm(ReportConfirmDTOIn dto) {
+        ReportDraftService.Confirmed c = reportDraftService.confirm(ReportDraftService.Kind.VISITOR, dto);
+        ReportDraftService.Draft d = c.draft();
+        String code = newCode();
+        try {
+            create(code, c.text(), d.language(), d.x(), d.y(), c.zoneCode(), d.analysis().attachmentUrl());
+        } catch (RuntimeException e) {
+            reportDraftService.restore(d); // the visitor can press send again
+            throw e;
+        }
+        return toDTO(code, find(code), c.transcript());
     }
 
     private void create(String code, String text, String language, Double x, Double y, String zoneCode,

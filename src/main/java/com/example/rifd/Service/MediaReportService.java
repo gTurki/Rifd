@@ -28,8 +28,9 @@ import java.util.stream.Collectors;
 import static org.springframework.util.StringUtils.hasText;
 
 // web reports (visitor page + staff app) with photos / a voice note: the same analysis as the Telegram bot.
-// Files are stored first (the alert always keeps them), then: voice -> transcript (Gemini), photos -> description
-// (Gemini) + fire/smoke detection (AI 2, in parallel). Any analysis failure -> a fallback line, never an error.
+// voice -> transcript (Gemini), photos -> description (Gemini) + fire/smoke detection (AI 2, in parallel), then the
+// files are stored (the alert always keeps them). Any analysis failure -> a fallback line, never an error; the only
+// rejection is a voice note with nobody speaking in it (too short, or Gemini answered and heard no speech).
 @Slf4j
 @Service
 public class MediaReportService {
@@ -50,9 +51,19 @@ public class MediaReportService {
     private static final String VOICE_FAILED = "مرفق صوتي تعذّر تفريغه، الرجاء الرجوع للمرفق";
     private static final String IMAGE_FAILED = "صور مرفقة تعذّر تحليلها، الرجاء الرجوع للمرفقات";
 
+    // 16 kHz mono 16-bit WAV (what the web recorder sends) = 32 000 bytes per second: less than ~0.5 s is not a message
+    private static final long MIN_WAV_BYTES = 16_000;
+    private static final String NO_VOICE = "ما قدرنا نسمع شي في التسجيل، سجّل مرة ثانية أو احذف التسجيل واكتب وش صار";
+
     // text = the final alert text, attachmentUrl = "up:<voiceId>,<photoId>,..." (voice first) or null,
     // transcript = what Gemini heard in the voice note (null: no voice note or not transcribed), shown back to the sender
     public record Result(String text, String attachmentUrl, String transcript) {
+    }
+
+    // the analysis before the text is put together: the preview step shows the transcript, the sender may correct it,
+    // then compose() builds the alert text. hasVoice + transcript == null = the voice note could not be transcribed
+    public record Analysis(String baseText, boolean hasVoice, String transcript, String imageLine, String evidence,
+                           String attachmentUrl, List<Long> fileIds) {
     }
 
     private final MediaFileRepository mediaFileRepository;
@@ -73,6 +84,11 @@ public class MediaReportService {
 
     // baseText may be empty, but then a photo or a voice note is required
     public Result process(String baseText, List<MultipartFile> photos, MultipartFile audio, String requestId) {
+        Analysis a = analyze(baseText, photos, audio, requestId);
+        return new Result(compose(a, a.transcript()), a.attachmentUrl(), a.transcript());
+    }
+
+    public Analysis analyze(String baseText, List<MultipartFile> photos, MultipartFile audio, String requestId) {
         List<MultipartFile> photoFiles = photos == null ? List.of()
                 : photos.stream().filter(f -> f != null && !f.isEmpty()).toList();
         boolean hasAudio = audio != null && !audio.isEmpty();
@@ -89,29 +105,26 @@ public class MediaReportService {
         }
         byte[] audioBytes = hasAudio ? read(audio, MAX_AUDIO_BYTES, "Voice note") : null;
         String audioType = hasAudio ? type(audio, AUDIO_TYPES, "Voice note") : null;
+        // an empty / silent recording is not a voice note (the web recorder still makes a valid WAV of it)
+        if (hasAudio && "audio/wav".equals(audioType) && audioBytes.length < MIN_WAV_BYTES) throw new ApiException(NO_VOICE);
 
-        // 2) store: the alert keeps its attachments even if every analysis fails
-        List<Long> ids = new ArrayList<>();
-        if (hasAudio) ids.add(mediaFileRepository.save(new MediaFile(audioBytes, audioType)).getId());
-        for (ImageInput i : images) ids.add(mediaFileRepository.save(new MediaFile(i.bytes(), i.mimeType())).getId());
-        String attachmentUrl = ids.isEmpty() ? null
-                : PREFIX + ids.stream().map(String::valueOf).collect(Collectors.joining(","));
-
-        // 3) analyze: AI 2 in the background while Gemini works
+        // 2) analyze before storing: a silent recording is rejected without leaving files behind.
+        // AI 2 runs in the background while Gemini works
         CompletableFuture<Optional<VisionResult>> detection = detect(images, requestId);
 
-        StringBuilder text = new StringBuilder(hasText(baseText) ? baseText.trim() : "");
         String heard = null;
         if (hasAudio) {
-            Optional<String> transcript = gemini.transcribe(audioBytes, audioType);
-            heard = transcript.orElse(null);
-            log.info("Web report {} voice: {}", requestId, transcript.map(t -> "'" + t + "'").orElse("not transcribed"));
-            addLine(text, transcript.map(t -> VOICE_LABEL + t).orElse(VOICE_FAILED));
+            GeminiGatekeeper.Transcription t = gemini.transcribeVoice(audioBytes, audioType);
+            log.info("Web report {} voice: {}", requestId, t.status() == GeminiGatekeeper.VoiceStatus.HEARD ? "'" + t.text() + "'" : t.status());
+            // Gemini answered and heard nobody: ask again. Gemini down (FAILED): keep the report, the file is attached
+            if (t.status() == GeminiGatekeeper.VoiceStatus.NO_SPEECH) throw new ApiException(NO_VOICE);
+            heard = t.text();
         }
+        String imageLine = null;
         if (!images.isEmpty()) {
             Optional<String> description = gemini.describeImages(images);
             log.info("Web report {} photos: {}", requestId, description.map(d -> "'" + d + "'").orElse("not described"));
-            addLine(text, description.map(d -> IMAGE_LABEL + d).orElse(IMAGE_FAILED));
+            imageLine = description.map(d -> IMAGE_LABEL + d).orElse(IMAGE_FAILED);
         }
 
         String evidence = detection
@@ -121,10 +134,38 @@ public class MediaReportService {
                 .map(VisionResult::summaryAr)
                 .orElse(null);
 
+        // 3) store: the alert keeps its attachments even if every analysis failed
+        List<Long> ids = new ArrayList<>();
+        if (hasAudio) ids.add(mediaFileRepository.save(new MediaFile(audioBytes, audioType)).getId());
+        for (ImageInput i : images) ids.add(mediaFileRepository.save(new MediaFile(i.bytes(), i.mimeType())).getId());
+        String attachmentUrl = ids.isEmpty() ? null
+                : PREFIX + ids.stream().map(String::valueOf).collect(Collectors.joining(","));
+
+        return new Analysis(hasText(baseText) ? baseText.trim() : "", hasAudio, heard, imageLine, evidence,
+                attachmentUrl, List.copyOf(ids));
+    }
+
+    // transcript = what Gemini heard, or the sender's correction of it (preview -> confirm)
+    public String compose(Analysis a, String transcript) {
+        StringBuilder text = new StringBuilder(a.baseText());
+        if (a.hasVoice()) addLine(text, hasText(transcript) ? VOICE_LABEL + transcript.trim() : VOICE_FAILED);
+        if (a.imageLine() != null) addLine(text, a.imageLine());
+
         // the detection line goes last and is never cut off (it carries "حريق"/"دخان" for the classifier, like Telegram)
+        String evidence = a.evidence();
         int room = evidence == null ? MAX_TEXT_LENGTH : MAX_TEXT_LENGTH - evidence.length() - 1;
         String body = text.length() > room ? text.substring(0, room) : text.toString();
-        return new Result(evidence == null ? body : body + "\n" + evidence, attachmentUrl, heard);
+        return evidence == null ? body : body + "\n" + evidence;
+    }
+
+    // a preview that was never confirmed: its files go too
+    public void deleteFiles(List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) return;
+        try {
+            mediaFileRepository.deleteAllById(fileIds);
+        } catch (Exception e) {
+            log.warn("Could not delete {} unused media file(s): {}", fileIds.size(), e.getMessage());
+        }
     }
 
     // AI 2: disabled / no photos / any failure -> empty (never "safe")

@@ -174,9 +174,21 @@ public class GeminiGatekeeper {
 
     // ---------------- voice ----------------
 
+    // HEARD = transcript in text, NO_SPEECH = Gemini answered but heard nothing,
+    // FAILED = disabled / every model failed (we cannot tell if anyone spoke: never reject a report for it)
+    public enum VoiceStatus { HEARD, NO_SPEECH, FAILED }
+
+    public record Transcription(VoiceStatus status, String text) {
+    }
+
     // empty = disabled / every model failed / no clear speech -> caller uses the voice fallback
     public Optional<String> transcribe(byte[] audio, String mimeType) {
-        if (!enabled || audio == null || audio.length == 0) return Optional.empty();
+        Transcription t = transcribeVoice(audio, mimeType);
+        return t.status() == VoiceStatus.HEARD ? Optional.of(t.text()) : Optional.empty();
+    }
+
+    public Transcription transcribeVoice(byte[] audio, String mimeType) {
+        if (!enabled || audio == null || audio.length == 0) return new Transcription(VoiceStatus.FAILED, null);
 
         Map<String, Object> body = Map.of(
                 "contents", List.of(Map.of("role", "user", "parts", List.of(
@@ -191,16 +203,16 @@ public class GeminiGatekeeper {
                 String transcript = generate(audioClient, model, body);
                 if (!hasText(transcript)) {
                     log.warn("Gemini transcribe [{}]: no clear speech", model);
-                    return Optional.empty();
+                    return new Transcription(VoiceStatus.NO_SPEECH, null);
                 }
                 log.info("Gemini transcribe [{}]: {} chars", model, transcript.trim().length());
-                return Optional.of(transcript.trim());
+                return new Transcription(VoiceStatus.HEARD, transcript.trim());
             } catch (Exception e) {
                 log.warn("Gemini transcribe [{}] failed: {}", model, e.getMessage());
             }
         }
         log.warn("Gemini transcribe: all models failed");
-        return Optional.empty();
+        return new Transcription(VoiceStatus.FAILED, null);
     }
 
     // ---------------- images ----------------

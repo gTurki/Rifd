@@ -85,12 +85,13 @@ public class WhatsAppClient {
         }
     }
 
-    // "05xxxxxxxx" -> "+9665xxxxxxxx", "9665..." -> "+9665...", spaces / dashes removed
+    // "05xxxxxxxx" / "5xxxxxxxx" -> "+9665xxxxxxxx", "9665..." -> "+9665...", spaces / dashes removed
     static String normalize(String phone) {
         if (!StringUtils.hasText(phone)) return null;
         String digits = phone.replaceAll("[^0-9]", "");
         if (digits.startsWith("00")) digits = digits.substring(2);
         if (digits.length() == 10 && digits.startsWith("05")) digits = "966" + digits.substring(1);
+        if (digits.length() == 9 && digits.startsWith("5")) digits = "966" + digits; // typed without the 0
         return digits.length() < 8 ? null : "+" + digits;
     }
 

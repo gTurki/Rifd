@@ -1,5 +1,6 @@
 package com.example.rifd.Controller;
 
+import com.example.rifd.DTOIn.ReportConfirmDTOIn;
 import com.example.rifd.DTOIn.VisitorReportDTOIn;
 import com.example.rifd.Service.VisitorReportService;
 import jakarta.validation.Valid;
@@ -33,6 +34,24 @@ public class VisitorReportController {
                                          @RequestParam(required = false) List<MultipartFile> photos,
                                          @RequestParam(required = false) MultipartFile audio) {
         return ResponseEntity.ok(visitorReportService.submitMedia(text, language, x, y, zoneCode, photos, audio));
+    }
+
+    // step 1: analyze photos / voice note and find the zone; nothing is reported yet
+    @PostMapping(value = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> preview(@RequestParam(required = false) String text,
+                                     @RequestParam(required = false) String language,
+                                     @RequestParam(required = false) Double x,
+                                     @RequestParam(required = false) Double y,
+                                     @RequestParam(required = false) String zoneCode,
+                                     @RequestParam(required = false) List<MultipartFile> photos,
+                                     @RequestParam(required = false) MultipartFile audio) {
+        return ResponseEntity.ok(visitorReportService.preview(text, language, x, y, zoneCode, photos, audio));
+    }
+
+    // step 2: the visitor checked what we heard and the place -> the report is sent
+    @PostMapping("/confirm")
+    public ResponseEntity<?> confirm(@RequestBody @Valid ReportConfirmDTOIn dto) {
+        return ResponseEntity.ok(visitorReportService.confirm(dto));
     }
 
     @GetMapping("/{code}")

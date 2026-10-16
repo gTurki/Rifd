@@ -13,6 +13,7 @@ import com.example.rifd.Repository.ActivityLogRepository;
 import com.example.rifd.Repository.AlertRepository;
 import com.example.rifd.Repository.EventRepository;
 import com.example.rifd.Repository.IncidentRepository;
+import com.example.rifd.Repository.MediaFileRepository;
 import com.example.rifd.Repository.NotificationRepository;
 import com.example.rifd.Repository.RecommendationRepository;
 import com.example.rifd.Repository.StaffRepository;
@@ -84,6 +85,7 @@ public class SimulationService {
     private final IncidentRepository incidentRepository;
     private final StaffRepository staffRepository;
     private final EventRepository eventRepository;
+    private final MediaFileRepository mediaFileRepository;
     private final TransactionTemplate tx;
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
@@ -107,7 +109,9 @@ public class SimulationService {
                              RecommendationRepository recommendationRepository, ActivityLogRepository activityLogRepository,
                              AlertRepository alertRepository, IncidentRepository incidentRepository,
                              StaffRepository staffRepository, EventRepository eventRepository,
+                             MediaFileRepository mediaFileRepository,
                              PlatformTransactionManager transactionManager) {
+        this.mediaFileRepository = mediaFileRepository;
         this.alertService = alertService;
         this.accessibilityService = accessibilityService;
         this.dashboardService = dashboardService;
@@ -155,7 +159,7 @@ public class SimulationService {
         return status();
     }
 
-    // clears all operational data (alerts, incidents, log, tasks, recommendations, notifications) and puts
+    // clears all operational data (alerts, incidents, log, tasks, recommendations, notifications, uploads) and puts
     // staff, assets and routes back to their initial state. Zones, events, staff, playbooks stay.
     public synchronized SimulationStatusDTOOut reset() {
         resetting = true; // the schedulers skip their ticks while the tables are cleared
@@ -173,6 +177,8 @@ public class SimulationService {
                 activityLogRepository.deleteAllInBatch();
                 alertRepository.deleteAllInBatch();
                 incidentRepository.deleteAllInBatch();
+                // the photos / voice notes of the deleted web reports (no FK: alerts point to them as "up:<id>")
+                mediaFileRepository.deleteAllInBatch();
 
                 accessibilityService.resetAll();
 

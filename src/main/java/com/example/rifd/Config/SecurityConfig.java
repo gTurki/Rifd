@@ -100,9 +100,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, API + "/auth/login").permitAll()
                         // external sources (sensors, radio gateway, staff app) push alerts without a token
-                        .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch", API + "/alerts/media").permitAll()
-                        // visitor app: report (text or photos/voice) + track by a random code
-                        .requestMatchers(HttpMethod.POST, API + "/visitor-reports", API + "/visitor-reports/media").permitAll()
+                        .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch", API + "/alerts/media",
+                                API + "/alerts/preview", API + "/alerts/confirm").permitAll()
+                        // visitor app: report (text or photos/voice, or preview -> confirm) + track by a random code
+                        .requestMatchers(HttpMethod.POST, API + "/visitor-reports", API + "/visitor-reports/media",
+                                API + "/visitor-reports/preview", API + "/visitor-reports/confirm").permitAll()
                         .requestMatchers(HttpMethod.GET, API + "/visitor-reports/*").permitAll()
                         // visitor app: map zones + accessible routes and their alternatives (public information)
                         .requestMatchers(HttpMethod.GET,

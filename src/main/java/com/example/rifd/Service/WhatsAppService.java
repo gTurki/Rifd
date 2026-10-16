@@ -106,8 +106,13 @@ public class WhatsAppService {
         }
     }
 
+    // runs inside afterCommit: an exception here would reach the caller although the data is committed
     private void sendOnce(String phone, String body, String onceKey) {
-        if (onceKey == null || sentKeys.add(onceKey)) whatsAppClient.send(phone, body);
+        try {
+            if (onceKey == null || sentKeys.add(onceKey)) whatsAppClient.send(phone, body);
+        } catch (Exception e) {
+            log.warn("WhatsApp could not be queued: {}", e.getClass().getSimpleName());
+        }
     }
 
     private String link(String label) {

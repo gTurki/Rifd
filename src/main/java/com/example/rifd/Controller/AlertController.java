@@ -3,6 +3,8 @@ package com.example.rifd.Controller;
 import com.example.rifd.DTOIn.AlertBatchDTOIn;
 import com.example.rifd.DTOIn.AlertDTOIn;
 import com.example.rifd.DTOIn.RejectDTOIn;
+import com.example.rifd.DTOIn.ReportConfirmDTOIn;
+import com.example.rifd.Service.ReportDraftService;
 import com.example.rifd.Enum.AlertStatus;
 import com.example.rifd.Security.CurrentUser;
 import com.example.rifd.Service.AlertService;
@@ -30,6 +32,7 @@ public class AlertController {
     private final CurrentUser currentUser;
     private final TelegramAttachmentService telegramAttachmentService;
     private final MediaReportService mediaReportService;
+    private final ReportDraftService reportDraftService;
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(@PathVariable Long id) {
@@ -80,6 +83,35 @@ public class AlertController {
         AlertDTOIn alert = new AlertDTOIn(AlertSource.STAFF_APP, sourceReference, media.text(), language,
                 media.attachmentUrl(), x, y, zoneCode == null || zoneCode.isBlank() ? null : zoneCode.trim(), null);
         return ResponseEntity.ok(alertService.ingest(alert));
+    }
+
+    // staff report in two steps, like the visitor page: preview (what we heard + where) -> confirm
+    @PostMapping(value = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> preview(@RequestParam(required = false) String sourceReference,
+                                     @RequestParam(required = false) String text,
+                                     @RequestParam(required = false) String language,
+                                     @RequestParam(required = false) Double x,
+                                     @RequestParam(required = false) Double y,
+                                     @RequestParam(required = false) String zoneCode,
+                                     @RequestParam(required = false) List<MultipartFile> photos,
+                                     @RequestParam(required = false) MultipartFile audio) {
+        ReportDraftService.Draft draft = reportDraftService.create(ReportDraftService.Kind.STAFF, text, language,
+                x, y, zoneCode, sourceReference, photos, audio);
+        return ResponseEntity.ok(reportDraftService.preview(draft, zoneCode));
+    }
+
+    @PostMapping("/confirm")
+    public ResponseEntity<?> confirm(@RequestBody @Valid ReportConfirmDTOIn dto) {
+        ReportDraftService.Confirmed c = reportDraftService.confirm(ReportDraftService.Kind.STAFF, dto);
+        ReportDraftService.Draft d = c.draft();
+        AlertDTOIn alert = new AlertDTOIn(AlertSource.STAFF_APP, d.sourceReference(), c.text(), d.language(),
+                d.analysis().attachmentUrl(), d.x(), d.y(), c.zoneCode(), null);
+        try {
+            return ResponseEntity.ok(alertService.ingest(alert));
+        } catch (RuntimeException e) {
+            reportDraftService.restore(d); // the staff member can press send again
+            throw e;
+        }
     }
 
     @PostMapping("/batch")

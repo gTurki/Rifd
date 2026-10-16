@@ -245,6 +245,28 @@ public class DataSeeder implements CommandLineRunner {
         // accessibility
         extra("A-102", "Norah Alshehri", ACCESSIBILITY, CERTIFIED, "G1", hash);
         extra("A-202", "Shahad Almutairi", ACCESSIBILITY, ASSISTANT, "PC", hash);
+
+        // third batch
+        extra("C-111", "Mohannad Alharbi", CROWD_MANAGEMENT, CERTIFIED, "G1", hash);
+        extra("C-112", "Abdulrahman Alqahtani", CROWD_MANAGEMENT, CERTIFIED, "PB", hash);
+        extra("C-113", "Saif Alotaibi", CROWD_MANAGEMENT, CERTIFIED, "TH", hash);
+        extra("C-114", "Omar Alzahrani", CROWD_MANAGEMENT, CERTIFIED, "PC", hash);
+        extra("F-109", "Naif Alshehri", FIRE_SAFETY, CERTIFIED, "G2", hash);
+        extra("F-110", "Ibrahim Almalki", FIRE_SAFETY, CERTIFIED, "SV", hash);
+        extra("F-111", "Turki Alanazi", FIRE_SAFETY, CERTIFIED, "G1", hash);
+        extra("F-203", "Fahad Alruwaili", FIRE_SAFETY, ASSISTANT, "TH", hash);
+        extra("M-107", "Dr. Hind Alotaibi", MEDICAL, CERTIFIED, "PA", hash);
+        extra("M-108", "Saad Alghamdi", MEDICAL, CERTIFIED, "PD", hash);
+        extra("M-109", "Dr. Yara Alqahtani", MEDICAL, CERTIFIED, "G3", hash);
+        extra("M-203", "Maram Alharthi", MEDICAL, ASSISTANT, "G1", hash);
+        extra("S-108", "Rashed Aldosari", SECURITY, CERTIFIED, "TH", hash);
+        extra("S-109", "Mishari Alsubaie", SECURITY, CERTIFIED, "PA", hash);
+        extra("S-110", "Hadi Alyami", SECURITY, CERTIFIED, "G3", hash);
+        extra("T-106", "Yasser Alshammari", TECHNICAL, CERTIFIED, "TH", hash);
+        extra("T-107", "Marwan Alenezi", TECHNICAL, CERTIFIED, "PA", hash);
+        extra("V-104", "Jawaher Alzahrani", VISITOR_SERVICES, CERTIFIED, "G2", hash);
+        extra("V-204", "Ruba Almutairi", VISITOR_SERVICES, ASSISTANT, "PD", hash);
+        extra("A-103", "Dalal Alharbi", ACCESSIBILITY, CERTIFIED, "PD", hash);
         return (int) staffRepository.count() - before;
     }
 

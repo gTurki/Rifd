@@ -7,6 +7,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -19,8 +20,16 @@ public class CurrentUser {
         return claim("staffId").map(v -> v instanceof Number n ? n.longValue() : Long.valueOf(v.toString()));
     }
 
+    // empty for a visitor token (role VISITOR is not a staff role)
     public Optional<StaffRole> role() {
-        return claim("role").map(v -> StaffRole.valueOf(v.toString()));
+        return claim("role").map(Object::toString)
+                .filter(r -> Arrays.stream(StaffRole.values()).anyMatch(s -> s.name().equals(r)))
+                .map(StaffRole::valueOf);
+    }
+
+    // signed-in visitor (visitor page); empty for staff tokens and anonymous calls
+    public Optional<Long> visitorId() {
+        return claim("visitorId").map(v -> v instanceof Number n ? n.longValue() : Long.valueOf(v.toString()));
     }
 
     public boolean isField() {

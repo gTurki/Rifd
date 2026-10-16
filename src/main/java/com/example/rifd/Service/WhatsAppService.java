@@ -124,7 +124,8 @@ public class WhatsAppService {
         return incident.getZone().getName() + " (" + incident.getZone().getCode() + ")";
     }
 
-    private static String severity(Severity severity) {
+    // shared with MailService (Arabic labels)
+    static String severity(Severity severity) {
         if (severity == null) return "غير محددة";
         return switch (severity) {
             case HIGH -> "عالية";
@@ -133,7 +134,7 @@ public class WhatsAppService {
         };
     }
 
-    private static String category(IncidentCategory category) {
+    static String category(IncidentCategory category) {
         if (category == null) return "أخرى";
         return switch (category) {
             case CROWD -> "ازدحام";

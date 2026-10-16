@@ -12,6 +12,7 @@ import com.example.rifd.Enum.AlertSource;
 import com.example.rifd.Enum.AlertStatus;
 import com.example.rifd.Enum.IncidentStatus;
 import com.example.rifd.Repository.AlertRepository;
+import com.example.rifd.Security.CurrentUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -30,42 +31,55 @@ public class VisitorReportService {
 
     public static final String REF_PREFIX = "rf:";
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final String DRAFT_OWNER = "visitor:";
+    public static final String SIGN_IN_FIRST = "سجّل دخولك أولًا عشان ترسل بلاغ";
 
     private final SecureRandom random = new SecureRandom();
     private final AlertService alertService;
     private final AlertRepository alertRepository;
     private final MediaReportService mediaReportService;
     private final ReportDraftService reportDraftService;
+    private final CurrentUser currentUser;
 
+    // every report needs a signed-in visitor (visitor page sign-in); the report is linked to the account
     public VisitorReportDTOOut submit(VisitorReportDTOIn dto) {
+        Long visitorId = requireVisitor();
         String code = newCode();
-        create(code, dto.text().trim(), dto.language(), dto.x(), dto.y(), dto.zoneCode(), null);
+        create(code, dto.text().trim(), dto.language(), dto.x(), dto.y(), dto.zoneCode(), null, visitorId);
         return track(code);
     }
 
     // same report with photos / a voice note (multipart). The analysis is added to the text before the pipeline
     public VisitorReportDTOOut submitMedia(String text, String language, Double x, Double y, String zoneCode,
                                            List<MultipartFile> photos, MultipartFile audio) {
+        Long visitorId = requireVisitor();
         String code = newCode();
         MediaReportService.Result media = mediaReportService.process(text, photos, audio, "web-" + code);
-        create(code, media.text(), language, x, y, zoneCode, media.attachmentUrl());
+        create(code, media.text(), language, x, y, zoneCode, media.attachmentUrl(), visitorId);
         return toDTO(code, find(code), media.transcript()); // the sender sees what we heard
     }
 
-    // two steps: preview (what we heard + where) -> the visitor checks / corrects it -> confirm
+    // two steps: preview (what we heard + where) -> the visitor checks / corrects it -> confirm.
+    // the draft remembers its visitor: only they can confirm it
     public ReportPreviewDTOOut preview(String text, String language, Double x, Double y, String zoneCode,
                                        List<MultipartFile> photos, MultipartFile audio) {
+        Long visitorId = requireVisitor();
         ReportDraftService.Draft draft = reportDraftService.create(ReportDraftService.Kind.VISITOR, text, language,
-                x, y, zoneCode, null, photos, audio);
+                x, y, zoneCode, DRAFT_OWNER + visitorId, photos, audio);
         return reportDraftService.preview(draft, zoneCode);
     }
 
     public VisitorReportDTOOut confirm(ReportConfirmDTOIn dto) {
+        Long visitorId = requireVisitor();
         ReportDraftService.Confirmed c = reportDraftService.confirm(ReportDraftService.Kind.VISITOR, dto);
         ReportDraftService.Draft d = c.draft();
+        if (!(DRAFT_OWNER + visitorId).equals(d.sourceReference())) {
+            reportDraftService.restore(d);
+            throw new ApiException("Report not found");
+        }
         String code = newCode();
         try {
-            create(code, c.text(), d.language(), d.x(), d.y(), c.zoneCode(), d.analysis().attachmentUrl());
+            create(code, c.text(), d.language(), d.x(), d.y(), c.zoneCode(), d.analysis().attachmentUrl(), visitorId);
         } catch (RuntimeException e) {
             reportDraftService.restore(d); // the visitor can press send again
             throw e;
@@ -73,12 +87,25 @@ public class VisitorReportService {
         return toDTO(code, find(code), c.transcript());
     }
 
+    // "my reports": the signed-in visitor's reports, newest first
+    public List<VisitorReportDTOOut> mine() {
+        Long visitorId = requireVisitor();
+        return alertRepository.findTop50ByVisitorIdOrderByReceivedAtDesc(visitorId).stream()
+                .filter(a -> a.getSourceReference() != null && a.getSourceReference().startsWith(REF_PREFIX))
+                .map(a -> toDTO(a.getSourceReference().substring(REF_PREFIX.length()), a, null))
+                .toList();
+    }
+
+    private Long requireVisitor() {
+        return currentUser.visitorId().orElseThrow(() -> new ApiException(SIGN_IN_FIRST));
+    }
+
     private void create(String code, String text, String language, Double x, Double y, String zoneCode,
-                        String attachmentUrl) {
+                        String attachmentUrl, Long visitorId) {
         AlertDTOIn alert = new AlertDTOIn(AlertSource.VISITOR_APP, REF_PREFIX + code, text,
                 language, attachmentUrl, x, y,
                 StringUtils.hasText(zoneCode) ? zoneCode.trim() : null, null);
-        alertService.ingest(alert); // runs the whole pipeline (classification + merge) before returning
+        alertService.ingestForVisitor(alert, visitorId); // runs the whole pipeline (classification + merge)
     }
 
     public VisitorReportDTOOut track(String rawCode) {

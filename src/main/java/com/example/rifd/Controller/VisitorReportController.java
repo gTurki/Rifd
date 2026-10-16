@@ -11,7 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
-// public (no token): the visitor app
+// the visitor app: sending a report needs a signed-in visitor (role VISITOR); tracking by code stays public
 @RestController
 @RequestMapping("/api/v1/visitor-reports")
 @RequiredArgsConstructor
@@ -52,6 +52,12 @@ public class VisitorReportController {
     @PostMapping("/confirm")
     public ResponseEntity<?> confirm(@RequestBody @Valid ReportConfirmDTOIn dto) {
         return ResponseEntity.ok(visitorReportService.confirm(dto));
+    }
+
+    // the signed-in visitor's reports
+    @GetMapping("/mine")
+    public ResponseEntity<?> mine() {
+        return ResponseEntity.ok(visitorReportService.mine());
     }
 
     @GetMapping("/{code}")

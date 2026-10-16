@@ -60,6 +60,11 @@ public class Alert extends BaseEntity {
     @JoinColumn(name = "reporter_id")
     private TelegramReporter reporter;
 
+    // the signed-in visitor who sent it (visitor page); null for every other source
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "visitor_id")
+    private Visitor visitor;
+
     @Enumerated(EnumType.STRING)
     private ReporterTrust reporterTrust;
 }

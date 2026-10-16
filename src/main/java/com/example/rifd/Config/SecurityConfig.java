@@ -1,5 +1,6 @@
 package com.example.rifd.Config;
 
+import com.example.rifd.Security.JwtService;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +33,7 @@ public class SecurityConfig {
     private static final String FIELD = "FIELD";
     private static final String OPERATOR = "OPERATOR";
     private static final String SUPERVISOR = "SUPERVISOR";
+    private static final String VISITOR = JwtService.VISITOR_ROLE; // visitor page accounts (not staff)
     private static final String[] ALL_ROLES = {FIELD, OPERATOR, SUPERVISOR};
     private static final String[] CONTROL_ROOM = {OPERATOR, SUPERVISOR};
 
@@ -89,7 +91,11 @@ public class SecurityConfig {
                         .accessDeniedHandler((req, res, ex) -> writeJson(res, 403, "Access denied")));
 
         if (!enabled) {
-            http.authorizeHttpRequests(a -> a.anyRequest().permitAll());
+            // everything open, but a token that IS sent is still read: the visitor page needs to know who is signed in
+            http.authorizeHttpRequests(a -> a.anyRequest().permitAll())
+                    .oauth2ResourceServer(o -> o
+                            .jwt(jwt -> jwt.jwtAuthenticationConverter(converter))
+                            .authenticationEntryPoint((req, res, ex) -> writeJson(res, 401, "Invalid or expired token")));
             return http.build();
         }
 
@@ -102,9 +108,13 @@ public class SecurityConfig {
                         // external sources (sensors, radio gateway, staff app) push alerts without a token
                         .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch", API + "/alerts/media",
                                 API + "/alerts/preview", API + "/alerts/confirm").permitAll()
-                        // visitor app: report (text or photos/voice, or preview -> confirm) + track by a random code
+                        // visitor app: sign up / sign in
+                        .requestMatchers(HttpMethod.POST, API + "/visitor-auth/register", API + "/visitor-auth/login").permitAll()
+                        // visitor app: reporting needs a signed-in visitor; "mine" before the public /{code} below
                         .requestMatchers(HttpMethod.POST, API + "/visitor-reports", API + "/visitor-reports/media",
-                                API + "/visitor-reports/preview", API + "/visitor-reports/confirm").permitAll()
+                                API + "/visitor-reports/preview", API + "/visitor-reports/confirm").hasRole(VISITOR)
+                        .requestMatchers(HttpMethod.GET, API + "/visitor-reports/mine").hasRole(VISITOR)
+                        // track by the random code (public)
                         .requestMatchers(HttpMethod.GET, API + "/visitor-reports/*").permitAll()
                         // visitor app: map zones + accessible routes and their alternatives (public information)
                         .requestMatchers(HttpMethod.GET,

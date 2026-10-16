@@ -10,6 +10,7 @@ import com.example.rifd.Entity.Zone;
 import com.example.rifd.Enum.*;
 import com.example.rifd.Mapper.DTOMapper;
 import com.example.rifd.Repository.AlertRepository;
+import com.example.rifd.Repository.VisitorRepository;
 import com.example.rifd.Repository.ZoneRepository;
 import com.example.rifd.Service.RuleBasedClassifier.Classification;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +35,7 @@ import static org.springframework.util.StringUtils.hasText;
 public class AlertService {
 
     private final AlertRepository alertRepository;
+    private final VisitorRepository visitorRepository;
     private final ZoneRepository zoneRepository;
     private final IncidentService incidentService;
     private final MergeService mergeService;
@@ -60,8 +62,9 @@ public class AlertService {
                         IncidentService incidentService, MergeService mergeService, AiClient aiClient,
                         RuleBasedClassifier ruleBasedClassifier, ActivityLogService activityLogService,
                         BroadcastService broadcastService, DashboardService dashboardService,
-                        PlatformTransactionManager transactionManager) {
+                        VisitorRepository visitorRepository, PlatformTransactionManager transactionManager) {
         this.alertRepository = alertRepository;
+        this.visitorRepository = visitorRepository;
         this.zoneRepository = zoneRepository;
         this.incidentService = incidentService;
         this.mergeService = mergeService;
@@ -88,8 +91,17 @@ public class AlertService {
     // Telegram bot: same pipeline + who sent it. Not in AlertDTOIn on purpose: POST /alerts is open
     // to external sources, and they must not be able to claim a trust level
     public AlertDTOOut ingest(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust) {
+        return ingest(dto, reporter, reporterTrust, null);
+    }
+
+    // visitor page: the report belongs to the signed-in visitor ("my reports")
+    public AlertDTOOut ingestForVisitor(AlertDTOIn dto, Long visitorId) {
+        return ingest(dto, null, null, visitorId);
+    }
+
+    private AlertDTOOut ingest(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust, Long visitorId) {
         // 1) save raw alert as NEW + broadcast (live counter)
-        Alert alert = transactionTemplate.execute(status -> saveNew(dto, reporter, reporterTrust));
+        Alert alert = transactionTemplate.execute(status -> saveNew(dto, reporter, reporterTrust, visitorId));
 
         // 2) AI: classification + merge decision in one call (outside any transaction and lock).
         //    Rules on failure / timeout
@@ -122,7 +134,7 @@ public class AlertService {
                 .toList();
     }
 
-    private Alert saveNew(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust) {
+    private Alert saveNew(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust, Long visitorId) {
         Alert alert = new Alert();
         alert.setSource(dto.source());
         alert.setSourceReference(dto.sourceReference());
@@ -143,6 +155,7 @@ public class AlertService {
 
         alert.setReporter(reporter);
         alert.setReporterTrust(reporterTrust);
+        alert.setVisitor(visitorId == null ? null : visitorRepository.getReferenceById(visitorId));
         alert.setStatus(AlertStatus.NEW);
         alertRepository.save(alert);
 

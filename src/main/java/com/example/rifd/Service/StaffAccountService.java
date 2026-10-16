@@ -49,6 +49,7 @@ public class StaffAccountService {
     private final StaffService staffService;
     private final BroadcastService broadcastService;
     private final WhatsAppService whatsAppService;
+    private final MailService mailService;
     private final CurrentUser currentUser;
 
     // ---------------- accounts ----------------
@@ -97,6 +98,7 @@ public class StaffAccountService {
         staffRepository.save(s);
         staffService.broadcast(s);
         whatsAppService.staffCreated(s, username, password); // W1, after the commit
+        mailService.staffCreated(s, username, password);     // E1, after the commit
         return new StaffCreatedDTOOut(DTOMapper.toDTO(s), username, password);
     }
 

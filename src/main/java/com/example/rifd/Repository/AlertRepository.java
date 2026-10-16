@@ -36,4 +36,8 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
     // visitor tracking (rf:RF-XXXXXX): incident + zone loaded with the alert
     @EntityGraph(attributePaths = {"incident", "zone"})
     Optional<Alert> findFirstBySourceReference(String sourceReference);
+
+    // "my reports" of a signed-in visitor, newest first
+    @EntityGraph(attributePaths = {"incident", "zone"})
+    List<Alert> findTop50ByVisitorIdOrderByReceivedAtDesc(Long visitorId);
 }

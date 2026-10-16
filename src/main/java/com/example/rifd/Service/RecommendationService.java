@@ -23,6 +23,7 @@ import com.example.rifd.Repository.RecommendationRepository;
 import com.example.rifd.Repository.StaffRepository;
 import com.example.rifd.Repository.TaskRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -68,6 +69,8 @@ public class RecommendationService {
     private final BroadcastService broadcastService;
     private final AiClient aiClient;
     private final TransactionTemplate tx;
+    // HIGH incidents: the plan is accepted and staffed automatically (assignment.auto-assign-high)
+    private final boolean autoAssignHigh;
 
     // one lock per incident: the async "created" and "severity changed" listeners, and the operator's
     // accept/reject, can arrive at the same time for the same incident
@@ -77,7 +80,9 @@ public class RecommendationService {
                                  StaffRepository staffRepository, PlaybookService playbookService,
                                  IncidentService incidentService, AssignmentService assignmentService,
                                  ActivityLogService activityLogService, BroadcastService broadcastService,
-                                 AiClient aiClient, PlatformTransactionManager transactionManager) {
+                                 AiClient aiClient, PlatformTransactionManager transactionManager,
+                                 @Value("${assignment.auto-assign-high:true}") boolean autoAssignHigh) {
+        this.autoAssignHigh = autoAssignHigh;
         this.recommendationRepository = recommendationRepository;
         this.taskRepository = taskRepository;
         this.staffRepository = staffRepository;
@@ -199,10 +204,20 @@ public class RecommendationService {
 
             // 2) AI suggestion (optional) outside any transaction, then 3) write
             Optional<AiClient.RecommendResponse> ai = askAi(snap);
-            tx.execute(s -> {
-                write(incidentId, snap, ai);
-                return null;
-            });
+            Long recId = tx.execute(s -> write(incidentId, snap, ai));
+
+            // 4) HIGH: nobody waits for the operator, the plan is accepted and staffed right away.
+            //    Own transaction: if it fails, the plan stays PENDING for the operator
+            if (recId != null && autoAssignHigh && snap.severity() == Severity.HIGH) {
+                try {
+                    tx.execute(s -> {
+                        autoAccept(recId, incidentId);
+                        return null;
+                    });
+                } catch (Exception e) {
+                    log.warn("Auto-assignment of HIGH incident #{} failed, left for the operator: {}", incidentId, e.getMessage());
+                }
+            }
             return null;
         });
     }
@@ -232,11 +247,12 @@ public class RecommendationService {
                         .map(p -> new AiClient.RecommendPlaybook(p.getId(), p.getTitle(), p.getSteps())).toList());
     }
 
-    private void write(Long incidentId, Snapshot snap, Optional<AiClient.RecommendResponse> ai) {
+    // the new PENDING recommendation's id, or null when none was needed
+    private Long write(Long incidentId, Snapshot snap, Optional<AiClient.RecommendResponse> ai) {
         Incident incident = incidentService.getIncident(incidentId);
-        if (IncidentService.isClosed(incident.getStatus())) return;
+        if (IncidentService.isClosed(incident.getStatus())) return null;
         // the severity moved again while the AI was thinking: the next queued event rebuilds it
-        if (incident.getSeverity() != snap.severity()) return;
+        if (incident.getSeverity() != snap.severity()) return null;
 
         Plan plan = buildPlan(incident, snap.playbooks(), ai);
 
@@ -255,7 +271,7 @@ public class RecommendationService {
                         ActorType.SYSTEM, null, null, null,
                         "Severity " + incident.getSeverity() + ": current staff already cover the plan");
             }
-            return;
+            return null;
         }
 
         Recommendation rec = new Recommendation();
@@ -278,6 +294,26 @@ public class RecommendationService {
                         + String.format(Locale.ROOT, " (confidence %.2f)", plan.confidence()));
 
         broadcastService.send(BroadcastService.RECOMMENDATIONS, "RECOMMENDATION_CREATED", DTOMapper.toDTO(rec));
+        return rec.getId();
+    }
+
+    // same as the operator's accept, by the SYSTEM. The incident is NOT acknowledged: no human has seen it yet
+    private void autoAccept(Long recommendationId, Long incidentId) {
+        Recommendation rec = recommendationRepository.findById(recommendationId).orElse(null);
+        if (rec == null || rec.getStatus() != RecommendationStatus.PENDING) return; // the operator was faster
+        Incident incident = incidentService.getIncidentForUpdate(incidentId);
+        if (IncidentService.isClosed(incident.getStatus()) || incident.getSeverity() != Severity.HIGH) return;
+
+        rec.setStatus(RecommendationStatus.ACCEPTED);
+        rec.setDecidedAt(LocalDateTime.now());
+        recommendationRepository.save(rec);
+
+        activityLogService.log(EntityType.RECOMMENDATION, rec.getId(), incidentId, ActionType.ACCEPTED,
+                ActorType.SYSTEM, null, RecommendationStatus.PENDING.name(), RecommendationStatus.ACCEPTED.name(),
+                "Auto-accepted: HIGH incident, assigned without waiting for the operator");
+
+        assignmentService.assignFromRecommendation(rec, null);
+        broadcastService.send(BroadcastService.RECOMMENDATIONS, "RECOMMENDATION_UPDATED", DTOMapper.toDTO(rec));
     }
 
     private Plan buildPlan(Incident incident, List<Playbook> playbooks, Optional<AiClient.RecommendResponse> ai) {

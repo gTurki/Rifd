@@ -1,0 +1,45 @@
+:root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #101715; color: #edf6ef; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+main { max-width: 1120px; margin: auto; padding: 24px; }
+header, .status-line, .actions, footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+header { margin-bottom: 20px; }
+.brand { font-size: 21px; font-weight: 750; color: #8cdda8; }
+.brand span { margin-inline-start: 8px; }
+h1 { display: inline; font-size: 18px; font-weight: 450; margin-inline-start: 24px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+.viewer { position: relative; width: 100%; aspect-ratio: 16/9; overflow: hidden; background: #060b09; border: 1px solid #324039; border-radius: 16px; }
+video, #overlay { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+#overlay { pointer-events: none; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; color: #9eafa3; padding: 80px 24px; text-align: center; }
+.counter { position: absolute; inset-block-start: 20px; inset-inline-end: 20px; min-width: 112px; display: flex; flex-direction: column; align-items: center; padding: 12px 24px; border-radius: 12px; background: #12261fe8; border: 1px solid #7cdba1; }
+.counter span:first-child { font-size: clamp(40px, 7vw, 76px); line-height: 1.05; font-weight: 750; font-variant-numeric: tabular-nums; }
+.counter span:last-child { color: #b2c7ba; font-size: 14px; margin-top: 5px; }
+.viewer.crowded .counter { border-color: #ffb669; background: #442b13eb; }
+.live { position: absolute; inset-block-start: 24px; inset-inline-start: 24px; font-size: 12px; font-weight: 700; letter-spacing: .08em; background: #1b4633; padding: 7px 12px; border-radius: 6px; }
+.performance { position: absolute; bottom: 14px; inset-inline-start: 20px; color: #b8d2c0; font-size: 12px; background: #08110ccc; padding: 4px 8px; }
+.status-line { min-height: 52px; font-size: 14px; }
+#status[data-tone="error"], #alertResult[data-tone="error"] { color: #ffb3a5; }
+#status[data-tone="success"] { color: #91e2af; }
+#trigger { color: #a8b9ad; text-align: end; }
+form { display: grid; grid-template-columns: 2fr 1fr 1.4fr 1fr auto; gap: 12px; align-items: end; padding-block: 12px; }
+label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: #b7c9be; }
+input, select, button { font: inherit; border: 1px solid #405248; border-radius: 8px; background: #1b2821; color: #edf6ef; padding: 10px 12px; min-height: 42px; }
+input, select { width: 100%; }
+button { cursor: pointer; white-space: nowrap; }
+button:hover:not(:disabled) { border-color: #8cdda8; }
+button:disabled { opacity: .45; cursor: default; }
+:focus-visible { outline: 2px solid #9af3bb; outline-offset: 3px; }
+.primary { background: #a2e3b6; color: #102619; border-color: #a2e3b6; font-weight: 700; }
+details { grid-column: 1/-1; color: #a8b9ad; font-size: 13px; }
+summary { cursor: pointer; padding-block: 8px; }
+.advanced { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }
+.actions { justify-content: flex-start; padding-block: 10px; flex-wrap: wrap; }
+.last-alert { display: flex; align-items: center; gap: 18px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #324039; }
+.last-alert img { width: 144px; max-height: 108px; object-fit: contain; border-radius: 8px; background: #060b09; }
+.last-alert p { margin: 0; color: #b7c9be; font-size: 14px; line-height: 1.6; }
+.explanation { font-size: 13px; line-height: 1.8; color: #a8b9ad; max-width: 850px; }
+footer { justify-content: flex-start; font-size: 12px; color: #8ca193; margin-top: 24px; flex-wrap: wrap; }
+a { color: #a2e3b6; }
+@media (max-width: 760px) { main { padding: 16px; } form { grid-template-columns: 1fr 1fr; } form > label:first-child { grid-column: 1/-1; } h1 { display: block; margin: 6px 0 0; font-size: 15px; } .advanced { grid-template-columns: 1fr; } .status-line { align-items: start; flex-direction: column; gap: 6px; padding-block: 12px; } .counter { inset-block-start: 12px; inset-inline-end: 12px; min-width: 84px; padding: 10px; } .last-alert img { width: 100px; } }

@@ -100,12 +100,30 @@ public class AlertService {
     }
 
     private AlertDTOOut ingest(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust, Long visitorId) {
+        return ingest(dto, reporter, reporterTrust, visitorId, null);
+    }
+
+    // Only called by the opt-in camera demo service after its threshold and image checks.
+    // The threshold is a SYSTEM rule, not a remotely verified AI classification.
+    public AlertDTOOut ingestCameraDemo(AlertDTOIn dto) {
+        if (dto.source() != AlertSource.CCTV) {
+            throw new ApiException("Camera demo alerts must use CCTV as their source");
+        }
+        Classification crowd = new Classification(IncidentCategory.CROWD,
+                RuleBasedClassifier.defaultSeverity(IncidentCategory.CROWD), null,
+                "Camera demo: local people count reached the configured threshold", ActorType.SYSTEM);
+        return ingest(dto, null, null, null, crowd);
+    }
+
+    private AlertDTOOut ingest(AlertDTOIn dto, TelegramReporter reporter, ReporterTrust reporterTrust,
+                              Long visitorId, Classification suppliedClassification) {
         // 1) save raw alert as NEW + broadcast (live counter)
         Alert alert = transactionTemplate.execute(status -> saveNew(dto, reporter, reporterTrust, visitorId));
 
-        // 2) AI: classification + merge decision in one call (outside any transaction and lock).
-        //    Rules on failure / timeout
-        Analysis analysis = analyze(alert);
+        // 2) Normal reports use AI classification/merge outside the transaction, with rules on failure.
+        //    The camera demo supplies a SYSTEM classification and reuses the rule-based merge path.
+        Analysis analysis = suppliedClassification == null
+                ? analyze(alert) : new Analysis(suppliedClassification, null, null);
 
         // 3) merge into an open incident or create a new one
         pipelineLock.lock();
@@ -241,8 +259,9 @@ public class AlertService {
         // aiDecisions / fallbackDecisions in the stats are counted from this row's actorType
         activityLogService.log(EntityType.ALERT, alert.getId(), incident.getId(), ActionType.CREATED,
                 c.decidedBy(), null, null, c.category() + "/" + c.severity(),
-                String.format(Locale.ROOT, "Classified by %s (confidence %.2f)%s%s%s",
-                        c.decidedBy() == ActorType.AI ? "AI" : "rules", c.confidence(),
+                String.format(Locale.ROOT, "Classified by %s (confidence %s)%s%s%s",
+                        c.decidedBy() == ActorType.AI ? "AI" : "rules",
+                        c.confidence() == null ? "not measured" : String.format(Locale.ROOT, "%.2f", c.confidence()),
                         analysis.lowAiConfidence() == null ? "" : String.format(Locale.ROOT,
                                 " | AI confidence %.2f below %.2f: rules used", analysis.lowAiConfidence(), minConfidence),
                         d == null ? "" : " | AI merge decision: " + d.status(), note));

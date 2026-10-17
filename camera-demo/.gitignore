@@ -1,0 +1,4 @@
+vendor/
+models/
+assets-manifest.json
+__pycache__/

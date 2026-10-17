@@ -105,6 +105,8 @@ public class SecurityConfig {
                         .requestMatchers("/ws", "/ws/**", "/error").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, API + "/auth/login").permitAll()
+                        // The controller exists only when camera-demo.enabled=true (local showcase).
+                        .requestMatchers(HttpMethod.POST, API + "/demo/camera-alerts").permitAll()
                         // external sources (sensors, radio gateway, staff app) push alerts without a token
                         .requestMatchers(HttpMethod.POST, API + "/alerts", API + "/alerts/batch", API + "/alerts/media",
                                 API + "/alerts/preview", API + "/alerts/confirm").permitAll()

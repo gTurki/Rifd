@@ -23,7 +23,7 @@ public class RuleBasedClassifier {
     public static final double FALLBACK_CONFIDENCE = 0.5;
 
     // shared result for AI and rule-based classification
-    public record Classification(IncidentCategory category, Severity severity, double confidence,
+    public record Classification(IncidentCategory category, Severity severity, Double confidence,
                                  String summary, ActorType decidedBy) {
     }
 
